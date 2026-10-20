@@ -324,9 +324,10 @@ Each WO, the Challan and the Invoice has its own stored date.
 
 Every record detail page (order, customer, supplier, product, user) has a **History** tab for Admin, showing that record's Activity Log entries.
 
-UI requirements:
+UI requirements (look and feel: [docs/DESIGN.md](docs/DESIGN.md)):
 
 - Mobile-first and fully usable on a phone (sharing to WhatsApp happens on phones).
+- Installable to the phone home screen (PWA manifest, standalone display). No offline mode.
 - Tables become stacked cards on small screens.
 - Every list paginated (25 per page) with search.
 - Confirm dialogs for destructive or status-changing actions.
@@ -342,6 +343,7 @@ UI requirements:
 - Count of orders by status (clickable → filtered order list)
 - Orders needing action: WOs pending, WOs or Challans needing re-send, cancelled WOs not yet acknowledged, delivered but not invoiced, invoiced but not completed
 - This month: number of orders, sell total; Admin/Manager also buy total and margin
+- Admin/Manager: chart of the last 6 months — sell total, buy total and margin per month
 - Last 10 orders
 
 ### Reports (Admin/Manager)
@@ -397,7 +399,7 @@ Previews are not recorded. `updated_at` / `updated_by` changes alone are not sho
 Single company record (Admin only):
 
 - Company name, address, phone, email
-- Logo (PNG/JPG, stored in Supabase Storage)
+- Logo (PNG/JPG/SVG, stored in Supabase Storage). Defaults to `brand/ze-logo-navy.svg` until replaced
 - Authorised signature image (PNG with transparent background)
 - Payment instructions (free text, printed on Invoice, e.g. bank/bKash details)
 - Default WO note (pre-filled on new WOs)
