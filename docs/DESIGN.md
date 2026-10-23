@@ -173,6 +173,23 @@ One decision per screen, three steps: **Customer → Items → Review**. Same fl
 
 ---
 
+## 7b. Order documents panel ("Checklist")
+
+Chosen 2026-10-23 from three prototyped options (Checklist, Next step, Paper). Reference build: branch `prototype/order-documents`, route `/prototypes/order-documents?v=1` (`&s=fresh|partial|edited|locked` for states, `&role=staff`). Rules are in SPEC §6 and §8.
+
+Sits on the order detail page below the order header. One white card, header "DOCUMENTS" (section label) with the hint "Preview never changes status" on the right.
+
+- **Groups:** "To suppliers" (one row per WO, in letter order, cancelled ones included) then "To customer" (Challan, Invoice). Small muted group headings.
+- **Row:** state icon · number (medium) · recipient (supplier name for WOs, "Challan" / "Invoice" for the customer docs) · Needs re-send badge if flagged. Second line: "Sent 21 Oct 2026, 11:20 AM · dated 21 Oct 2026" or "Not sent". Right side: **Preview** (ghost eye icon) and **Share** (phone, share icon) / **Download** (desktop, download icon) as icon buttons with labels for screen readers. The send button is navy when the document still needs sending (not sent or needs re-send) and secondary once sent.
+- **State icons (24px circle):** not sent = empty hairline circle; sent = `success` fill with white check; needs re-send = `warning` outline with refresh icon; cancelled = `canvas` fill with grey ×.
+- **Cancelled WO row:** number and supplier struck through in `ink-subtle`, then in `danger` "Tell <supplier> that WO-… is cancelled." with a secondary **Done** button. After Done: "Cancelled · supplier told", no actions. (Done clears the dashboard's "cancelled WOs not yet acknowledged".)
+- **Share / Download dialog** (opened by the send button): title "Share WO-2026-0012-A" / "Download …", subtitle "<Document> to <recipient>" plus "· order changed since it was last sent" or "· already sent <time>". Document date field (default today, or the stored date on re-send; disabled with "Dates are locked with the order." when locked). Amber warning box listing every SPEC §6.3 / §8.0 warning that applies. Footer: phone = full-width **Share PDF** (shows "Opening share sheet…" while the share sheet is open); desktop = **Open WhatsApp chat** (secondary, `wa.me` link with pre-filled text) and **Download PDF**.
+- **Preview dialog:** file name as title, "Preview only. Not marked as sent.", the rendered PDF.
+- **Order header** (above the panel): status pill, **WO x/y** badge while some WOs are pending, "Locked" outline badge; customer, order date, delivery date, sell total. When locked, a canvas strip: "Invoice sent, so this order is locked. Documents can still be downloaded." with **Unlock** for Admin (dialog with required reason).
+- **Feedback:** toast after each send ("WO-2026-0012-A shared", "Downloaded CH-2026-0012.pdf").
+
+---
+
 ## 8. Icons, empty states, motion
 
 - **Icons:** Lucide, outline, 1.5px stroke, 18px in nav, 16px inline. Dashboard `layout-dashboard`, Orders `clipboard-list`, Products `package`, Customers `store`, Suppliers `factory`, Reports `chart-column`, Activity `history`, Settings `settings`.

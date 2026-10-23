@@ -210,7 +210,7 @@ Each WO has its own status: `pending` → `sent`, or `cancelled`.
 
 - Downloading or sharing the WO PDF marks it `sent`.
 - A sent WO can carry **Needs re-send** (§5.5); downloading/sharing it again clears the flag.
-- A sent WO is **never deleted**. When its supplier has no items left, or the order is cancelled, it becomes `cancelled` and the documents panel shows "Tell <supplier> that WO-… is cancelled." A pending WO in the same situation is simply deleted.
+- A sent WO is **never deleted**. When its supplier has no items left, or the order is cancelled, it becomes `cancelled` and the documents panel shows "Tell <supplier> that WO-… is cancelled." with a **Done** button; Done records that the supplier was told (logged) and removes it from the dashboard's needs-action list. A pending WO in the same situation is simply deleted.
 - Restoring a cancelled order puts its cancelled WOs back to `sent`.
 
 ### 6.3 Auto-update rules
@@ -313,7 +313,7 @@ Each WO, the Challan and the Invoice has its own stored date.
 | `/` | **Dashboard** | All (margin cards Admin/Manager only) |
 | `/orders` | Order list: search (number, customer, reference), filters (status, customer, supplier, date range), status badges, WO x/y badge, Needs re-send badge | All |
 | `/orders/new` | Order form (§5.2) | All |
-| `/orders/[id]` | Order detail: header, items, totals, documents panel (each WO + Challan + Invoice with Preview / Download / Share, date, sent / needs re-send / cancelled state), change status, order history | All |
+| `/orders/[id]` | Order detail: header, items, totals, documents panel (each WO + Challan + Invoice with Preview / Download / Share, date, sent / needs re-send / cancelled state; design: [DESIGN.md §7b](docs/DESIGN.md#7b-order-documents-panel-checklist)), change status, order history | All |
 | `/orders/[id]/edit` | Edit order (subject to lock) | All |
 | `/customers`, `/customers/[id]` | List + detail with Products tab | All (edit Admin/Manager) |
 | `/suppliers`, `/suppliers/[id]` | List + detail with Products tab | All (edit Admin/Manager) |
@@ -610,6 +610,7 @@ activity_kind:   data | event
 | wo_date | date | document date (§8.0) |
 | note | text | printed on WO |
 | sent_at, cancelled_at | timestamptz | |
+| cancel_acknowledged_at, cancel_acknowledged_by | timestamptz, uuid → profiles | supplier told about the cancellation (§6.2) |
 | | unique (order_id, letter); partial unique (order_id, supplier_id) where status ≠ `cancelled` | |
 
 **order_items**
