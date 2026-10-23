@@ -1,0 +1,8 @@
+pnpm-lock.yaml
+.next
+public
+brand
+coverage
+playwright-report
+test-results
+*.md

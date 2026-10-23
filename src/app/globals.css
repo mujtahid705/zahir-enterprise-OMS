@@ -1,0 +1,199 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Navy Ledger design tokens. Source of truth: docs/DESIGN.md. Light only in v1. */
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Brand */
+  --navy: #081f3f;
+  --navy-hover: #0d2a54;
+  --navy-active: #12305c;
+  --brass: #b08d57;
+  --brass-soft: #f3ece1;
+
+  /* Neutrals */
+  --canvas: #f7f7f5;
+  --surface: #ffffff;
+  --hairline: #e5e5e0;
+  --border-strong: #d4d4ce;
+  --ink: #0e1a2b;
+  --ink-muted: #5b6472;
+  --ink-subtle: #8a929e;
+  --sidebar-text: #c9d2e0;
+  --table-head: #f1f1ee;
+
+  /* Feedback */
+  --danger: #b91c1c;
+  --success: #15803d;
+  --warning: #b45309;
+
+  /* Status pills: background / text */
+  --status-created-bg: #f1f5f9;
+  --status-created-fg: #475569;
+  --status-wo-sent-bg: #eff6ff;
+  --status-wo-sent-fg: #1d4ed8;
+  --status-delivered-bg: #f0fdfa;
+  --status-delivered-fg: #0f766e;
+  --status-invoiced-bg: #fffbeb;
+  --status-invoiced-fg: #b45309;
+  --status-completed-bg: #f0fdf4;
+  --status-completed-fg: #15803d;
+  --status-cancelled-bg: #fef2f2;
+  --status-cancelled-fg: #b91c1c;
+
+  /* shadcn/ui semantic slots mapped onto the tokens above */
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --primary: var(--navy);
+  --primary-foreground: #ffffff;
+  --secondary: var(--surface);
+  --secondary-foreground: var(--ink);
+  --muted: var(--table-head);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--table-head);
+  --accent-foreground: var(--ink);
+  --destructive: var(--danger);
+  --border: var(--hairline);
+  --input: var(--border-strong);
+  --ring: var(--navy);
+  --chart-1: var(--navy);
+  --chart-2: #94a3b8;
+  --chart-3: var(--brass);
+  --chart-4: var(--ink-muted);
+  --chart-5: var(--ink-subtle);
+  --radius: 0.5rem;
+  --sidebar: var(--navy);
+  --sidebar-foreground: var(--sidebar-text);
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: var(--navy);
+  --sidebar-accent: var(--navy-active);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: rgb(255 255 255 / 0.08);
+  --sidebar-ring: var(--brass);
+
+  --shadow-overlay: 0 8px 24px rgb(8 31 63 / 0.08);
+}
+
+@theme inline {
+  --color-navy: var(--navy);
+  --color-navy-hover: var(--navy-hover);
+  --color-navy-active: var(--navy-active);
+  --color-brass: var(--brass);
+  --color-brass-soft: var(--brass-soft);
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-hairline: var(--hairline);
+  --color-border-strong: var(--border-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+  --color-sidebar-text: var(--sidebar-text);
+  --color-table-head: var(--table-head);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: var(--font-geist-sans);
+  --font-heading: var(--font-geist-sans);
+
+  /* 6px buttons, inputs and pills; 8px cards and dialogs; nothing rounder */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-2xl: 8px;
+  --radius-3xl: 8px;
+  --radius-4xl: 8px;
+
+  --shadow-overlay: var(--shadow-overlay);
+}
+
+/* UPPERCASE 11px labels that echo the wordmark */
+@utility section-label {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+/* Money and quantities */
+@utility num {
+  font-variant-numeric: tabular-nums;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply bg-canvas text-base text-ink antialiased lg:text-sm;
+  }
+  :focus-visible {
+    outline: 2px solid var(--navy);
+    outline-offset: 2px;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  /* 16px inputs on phones prevent iOS zoom */
+  @media (max-width: 767px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-property: opacity !important;
+    }
+  }
+}

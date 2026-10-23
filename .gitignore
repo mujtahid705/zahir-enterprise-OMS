@@ -9,3 +9,8 @@ out/
 /test-results/
 /playwright-report/
 /coverage/
+/build
+*.pem
+*.tsbuildinfo
+next-env.d.ts
+.pnpm-debug.log*

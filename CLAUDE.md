@@ -1,6 +1,14 @@
 # ZE Order & Billing System
 
-Spec: `SPEC.md`. Domain terms: `GLOSSARY.md`. Decisions: `docs/adr/`. Look and feel: `docs/DESIGN.md`. Logo assets: `brand/`.
+Spec: `SPEC.md`. Domain terms: `GLOSSARY.md`. Decisions: `docs/adr/`. Look and feel: `docs/DESIGN.md`. Logo assets: `brand/` (copies served from `public/brand/`).
+
+## Code
+
+- Next.js 16 with Cache Components (see `AGENTS.md`): read the bundled docs in `node_modules/next/dist/docs/` before writing Next.js code.
+- Colours, radii and type come from the tokens in `src/app/globals.css`, which mirror `docs/DESIGN.md`. Use token classes (`bg-navy`, `text-ink-muted`, `section-label`, `num`), never raw hex.
+- Navigation and role visibility live in `src/lib/nav.ts`.
+- `PLACEHOLDER_USER` stands in for the signed-in user until auth lands.
+- Before committing run `pnpm check`; run `pnpm test:e2e` when UI changes.
 
 ## Agent skills
 
