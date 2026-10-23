@@ -153,6 +153,26 @@ Clear space around the logo: at least the height of the E's middle bar. Never re
 
 ---
 
+## 7a. Order form ("Steps")
+
+Chosen 2026-10-23 from three prototyped options (Ledger, Steps, Order pad). Reference build: branch `prototype/order-form`, route `/prototypes/order-form?v=2` (`?role=staff` for the Staff view). Flow rules are in SPEC §5.2.
+
+One decision per screen, three steps: **Customer → Items → Review**. Same flow on desktop, in a centred column (max 576px).
+
+- **Progress row** at the top: numbered circles joined by hairlines; done steps are filled navy with a check, the current step is outlined navy, later steps are disabled until reachable (Items needs a Customer, Review needs at least one item). Tapping a reachable step jumps to it.
+- **Customer step:** heading "Who is this order for?", search box (name, code, phone), list of active Customers (name, code · phone). Tapping one moves to Items. Changing to a different Customer once items exist asks for confirmation (dialog), then clears the items.
+- **Customer chip** on Items and Review: section label "Customer", name, "Change" link back to step 1.
+- **Items step:** empty state "No items yet" with **Add product**. Added items list as rows: product name, supplier, sell total, quantity in pcs, chevron. Tapping a row reopens the quantity sheet. **Add another product** button under the list.
+- **Product picker:** bottom sheet (85% height) with search, listing only this Customer's active Products: name, spec · supplier, sell price per piece. Products already on the order show "Added" and are disabled. Sheet footer: **+ New product for this customer** (Admin/Manager, opens the product form sheet with the customer pre-set, then goes straight to quantity) or the hint "Product missing? Ask a manager to add it." (Staff).
+- **Quantity sheet:** product name and spec · supplier; large right-aligned numeric input (whole pieces, lakh grouping as you type); quick-fill chips **500 · 1,000 · 2,000 · 5,000 · 10,000**; live sell line (price/pc → total) and, for Admin/Manager, buy line with margin in brass. Primary button **Add to order** (new line) or **Update** (existing line, with a remove icon button beside it).
+- **Review step:** "Work Orders to send" list (letter badge A/B/C, supplier, item count · pcs), totals box (sell; buy and margin with % for Admin/Manager), then order details: order date, delivery date, customer reference, delivery address (prefilled from the Customer), invoice note ("Printed on the Invoice."), notes ("Internal. Never printed.").
+- **Sticky footer** (from step 2, above the phone tab bar): back icon button, sell total and item count, then **Review →** on Items or **Save order** on Review.
+- **Motion:** step content fades and slides in 8px from the right, 200ms ease-out. Sheets use the standard sheet motion. Opacity only under reduced motion.
+- **After save:** go to the new order's detail page (the prototype's confirmation screen was a stand-in).
+- **Editing an existing order** uses the same screens and opens on Items.
+
+---
+
 ## 8. Icons, empty states, motion
 
 - **Icons:** Lucide, outline, 1.5px stroke, 18px in nav, 16px inline. Dashboard `layout-dashboard`, Orders `clipboard-list`, Products `package`, Customers `store`, Suppliers `factory`, Reports `chart-column`, Activity `history`, Settings `settings`.

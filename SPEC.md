@@ -143,6 +143,8 @@ Fields: code (auto, e.g. `P-0001`, one global sequence), customer*, supplier*, n
 
 Changing the customer after items are added clears the items (after a confirmation).
 
+Screen design: three-step flow (Customer → Items → Review), see [docs/DESIGN.md §7a](docs/DESIGN.md#7a-order-form-steps).
+
 ### 5.3 Snapshot
 
 Each Order Item stores its own `sell_price`, `buy_price`, `supplier_id`, product name and spec text, copied from the Product when the line is added. All documents and reports use these values, never the current Product.
