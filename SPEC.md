@@ -419,6 +419,23 @@ Single company record (Admin only):
 | UI | Tailwind CSS + shadcn/ui |
 | Forms / validation | react-hook-form + Zod (same Zod schemas validate on the server) |
 | Hosting | Vercel (app) + Supabase (DB, auth, storage); Supabase daily backups |
+| Package manager / runtime | pnpm; Node LTS pinned in `.nvmrc`; latest stable Next.js, React, Tailwind at scaffold time |
+| Charts | shadcn/ui charts (Recharts) |
+| Dates | date-fns + `@date-fns/tz` (Asia/Dhaka) |
+| Font | Geist via `next/font` |
+| PWA | Next.js built-in `manifest` metadata, no extra library |
+| Unit / integration tests | Vitest |
+| End-to-end tests | Playwright (desktop + phone viewports) |
+| Lint / format | ESLint + Prettier |
+
+### 13.0 Environments and testing
+
+- **Two hosted Supabase projects:** `ze-dev` (development, tests, previews) and `ze-prod` (live). No local Supabase/Docker.
+- Drizzle migrations run against `ze-dev` first, then `ze-prod` on release. Vercel preview deployments use `ze-dev`; production uses `ze-prod`.
+- **Unit tests** (Vitest) cover pure logic with no database: status rules, numbering format, money and amount-in-words, permission checks, activity diff formatting.
+- **Database tests** (Vitest) run against `ze-dev` for triggers, the immutable Activity Log, numbering under concurrency and lock rules. Each test runs in a transaction that is rolled back, or uses rows tagged with a unique test run id that are cleaned up afterwards. They never run against `ze-prod` (guard: refuse to run unless `DATABASE_URL` matches the dev project ref).
+- **End-to-end tests** (Playwright) run against a local `next dev` connected to `ze-dev`, with seeded test users per role, at desktop and phone viewports. Core flow: create order with two suppliers → download WOs → Challan → Invoice → Completed, plus Staff margin-hiding.
+
 
 ### 13.1 Data access and security
 
@@ -693,5 +710,6 @@ Decisions confirmed with ZE, so they are not re-opened during the build.
 | 14 | No "Revised" marking on documents; staff check before re-sending. |
 | 15 | Sent WOs are cancelled, never deleted. Orders are never deleted. |
 | 16 | Admin-only, append-only Activity Log of every change, captured by database triggers (ADR 0001). |
+| 17 | Hosted Supabase for development (`ze-dev`) and production (`ze-prod`); no local Docker. Tests: Vitest (unit + DB against `ze-dev`) and Playwright (E2E). |
 
 No open questions at this time.
