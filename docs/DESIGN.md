@@ -144,12 +144,20 @@ Clear space around the logo: at least the height of the E's middle bar. Never re
 
 ---
 
-## 7. Dashboard
+## 7. Dashboard ("Overview")
 
-- KPI cards (white, hairline border): count of orders by status (each clickable), this-month order count and sell total. Admin/Manager also see buy total and **margin in brass**.
-- **Chart (Admin/Manager only):** last 6 months. Navy bars = sell total, light slate bars = buy total, `brass` line = margin. Minimal axes, hairline gridlines, tabular `Tk` tooltip.
-- "Needs action" lists and last 10 orders as compact tables.
-- Staff see counts and lists only.
+Layout chosen 2026-10-23 from three prototyped options (Overview, To-do, Pipeline). Reference build: branch `prototype/dashboard`, route `/prototypes/dashboard?v=1` (`&role=staff`). Content rules are in SPEC §10.
+
+Numbers first, top to bottom:
+
+1. **Orders by status** (section label): one joined strip of six tiles (1px gaps on a `border` background, outer radius 8px), 3 columns on phone, 6 from 1024px. Each tile: 6px dot in the status colour + label (12px, `ink-muted`), count (24px semibold navy, tabular). Whole tile links to the order list filtered by that status.
+2. **<Month Year>** (section label, e.g. "OCTOBER 2026"): joined figure strip, 2 columns on phone, 4 from 1024px: Orders, Sell total, and for Admin/Manager Buy total and **Margin in brass** with "22.8% of sell" underneath. Values 24px, 30px from 768px, whole taka (no paisa). Staff see Orders and Sell total only (2 columns).
+3. **Chart + Needs action** side by side from 1024px (chart 3/5, list 2/5); stacked on smaller screens, chart first. Staff: no chart, Needs action takes the full width.
+   - **Last 6 months** card (Admin/Manager): legend row (Sell, Buy, Margin) with a "Show table" / "Show chart" text toggle on the right. Navy sell bars, buy bars `#CBD5E1` with a 0.75px `#94A3B8` edge, 2px gap between the pair, 3px top radius; 2px `brass` margin line with 8px dots ringed in white; the latest margin point direct-labelled. Hairline gridlines, y-axis in lakh ("7.5L"), month labels below. Hover or tap a month: other months dim to 45%, tooltip card with Sell / Buy / Margin in `Tk`. The table view lists the same numbers. Drawn at the card's real width so text stays 10–11px. The card does not stretch to the list's height.
+   - **Needs action · N** card: groups in SPEC §10 order: cancelled WOs to tell supplier (`danger` dot), needs re-send (`warning` dot), WOs not sent, delivered but not invoiced, invoiced but not completed (neutral dots). Group row: dot, title, count chip. Up to 2 items per group, then "+N more". Item: number (medium) · counterparty, detail line below (`ink-subtle`), action link on the right ("Send →", "Re-send →", "Invoice →", "Open →") that opens the order. Groups with nothing in them are hidden; when all are empty, show "Nothing waiting" with a success check.
+4. **Last 10 orders** card with "View all" link: table from 768px (Order, Customer, Date, Status pill + "WO x/y" when partly sent, Sell right-aligned); stacked cards on phones (number + pill, customer + amount).
+
+The action links ("Send →", "Invoice →") only open the order; documents are always sent from the order's documents panel (§7b).
 
 ---
 

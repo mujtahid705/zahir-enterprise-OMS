@@ -342,6 +342,8 @@ UI requirements (look and feel: [docs/DESIGN.md](docs/DESIGN.md)):
 
 ### Dashboard
 
+Layout: [docs/DESIGN.md §7](docs/DESIGN.md#7-dashboard-overview).
+
 - Count of orders by status (clickable → filtered order list)
 - Orders needing action: WOs pending, WOs or Challans needing re-send, cancelled WOs not yet acknowledged, delivered but not invoiced, invoiced but not completed
 - This month: number of orders, sell total; Admin/Manager also buy total and margin
