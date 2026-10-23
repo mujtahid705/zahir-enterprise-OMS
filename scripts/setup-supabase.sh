@@ -203,7 +203,7 @@ run_wizard() {
 # Run from the repo root so .env.local lands next to package.json.
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ENV_FILE=".env.local"
-REGION_LABEL="South Asia (Mumbai) · ap-south-1"
+REGION_LABEL="Southeast Asia (Singapore) · ap-southeast-1"
 
 urlencode() { python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"; }
 
@@ -214,34 +214,34 @@ with_password() {
   printf '%s' "${url//\[YOUR-PASSWORD\]/$enc}"
 }
 
-TOTAL_STAGES=7
+TOTAL_STAGES=6
 
-banner "ZE Order & Billing · Supabase setup (ticket #2)"
+banner "ZE Order & Billing · Supabase setup (ticket #2, ADR 0002)"
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
 stage "Sign in to Supabase"
-say "Both projects (ze-dev and ze-prod) live in ZE's Supabase organisation."
+say "One project, \"Zahir Enterprise\", serves development and production (ADR 0002)."
 open_url "https://supabase.com/dashboard/projects"
 step "Sign in (or sign up) with the account ZE will own."
 step "If asked, create an organisation (e.g. \"Zahir Enterprise\"), Free plan is fine for dev."
 pause "Signed in and on the Projects page? Press Enter"
 
 # ── 2 ─────────────────────────────────────────────────────────────────────
-stage "Create the ze-dev project"
+stage "Create the Zahir Enterprise project"
 open_url "https://supabase.com/dashboard/new"
 step "Organisation: ZE's organisation."
-step "Project name: ze-dev"
+step "Project name: Zahir Enterprise"
 step "Database password: click \"Generate a password\", then COPY it before continuing."
 step "Region: $REGION_LABEL"
 step "Click \"Create new project\" and wait until it finishes setting up (1–2 min)."
 note "The DB password is shown only now. It's saved to .env.local (git-ignored)."
-ask_secret SUPABASE_DB_PASSWORD "Paste the ze-dev database password:"
+ask_secret SUPABASE_DB_PASSWORD "Paste the database password:"
 [[ -n "$SUPABASE_DB_PASSWORD" ]] || { warn "password is required"; exit 1; }
 write_env SUPABASE_DB_PASSWORD "$SUPABASE_DB_PASSWORD"
 say ""
 step "Look at the browser address bar: supabase.com/dashboard/project/<project-ref>"
 while :; do
-  ask SUPABASE_PROJECT_REF "Paste the ze-dev project ref (20 lowercase letters):"
+  ask SUPABASE_PROJECT_REF "Paste the project ref (20 lowercase letters):"
   [[ "$SUPABASE_PROJECT_REF" =~ ^[a-z]{20}$ ]] && break
   warn "that doesn't look like a project ref; copy just the 20 letters after /project/"
 done
@@ -249,7 +249,7 @@ write_env SUPABASE_PROJECT_REF "$SUPABASE_PROJECT_REF"
 note "DB tests refuse to run unless DATABASE_URL points at this ref."
 
 # ── 3 ─────────────────────────────────────────────────────────────────────
-stage "ze-dev API keys"
+stage "API keys"
 write_env NEXT_PUBLIC_SUPABASE_URL "https://${SUPABASE_PROJECT_REF}.supabase.co"
 open_url "https://supabase.com/dashboard/project/${SUPABASE_PROJECT_REF}/settings/api-keys"
 step "Settings → API Keys. Use the new keys, not the legacy anon/service_role tab."
@@ -265,7 +265,7 @@ write_env SUPABASE_SECRET_KEY "$SUPABASE_SECRET_KEY"
 note "Server only. Never prefix it with NEXT_PUBLIC_."
 
 # ── 4 ─────────────────────────────────────────────────────────────────────
-stage "ze-dev database connection strings"
+stage "Database connection strings"
 open_url "https://supabase.com/dashboard/project/${SUPABASE_PROJECT_REF}?showConnect=true"
 step "Click \"Connect\" at the top of the project page → Connection String → Type: URI."
 step "Under \"Transaction pooler\" (port 6543), copy the string. Leave [YOUR-PASSWORD] in it."
@@ -280,7 +280,7 @@ write_env DIRECT_DATABASE_URL "$(with_password "$SESSION_URL")"
 note "Used by drizzle-kit migrations."
 
 # ── 5 ─────────────────────────────────────────────────────────────────────
-stage "ze-dev auth settings"
+stage "Auth settings"
 open_url "https://supabase.com/dashboard/project/${SUPABASE_PROJECT_REF}/auth/providers"
 step "Authentication → Sign In / Providers: turn OFF \"Allow new users to sign up\". Save."
 step "Leave the Email provider enabled (ZE users sign in with email + password)."
@@ -290,22 +290,12 @@ step "Authentication → URL Configuration:"
 step "  Site URL: http://localhost:3000"
 step "  Redirect URLs → Add URL: http://localhost:3000/**   (password-reset links)"
 step "Save."
-note "Dev uses Supabase's built-in email, which is rate-limited; production SMTP comes in #20."
+note "Built-in email is rate-limited; custom SMTP and the production Site URL come in #20."
+note "This is the live database: before launch, consider the Pro plan (daily backups, no pausing)."
 pause "Done? Press Enter"
 
 # ── 6 ─────────────────────────────────────────────────────────────────────
-stage "Create the ze-prod project"
-say "Production gets its own project. Its keys are NOT stored locally; they go to Vercel in #20."
-open_url "https://supabase.com/dashboard/new"
-step "Project name: ze-prod · Region: $REGION_LABEL"
-step "Generate a database password and save it in ZE's password manager (not here)."
-step "Create the project and wait for it to finish."
-step "Then Authentication → Sign In / Providers: turn OFF \"Allow new users to sign up\". Save."
-note "Consider the Pro plan for ze-prod before launch: daily backups and no pausing."
-pause "ze-prod created and sign-ups off? Press Enter"
-
-# ── 7 ─────────────────────────────────────────────────────────────────────
-stage "Verify the ze-dev connection"
+stage "Verify the database connection"
 if [[ -d node_modules/postgres ]]; then
   for var in DATABASE_URL DIRECT_DATABASE_URL; do
     if URL="${!var}" node -e '

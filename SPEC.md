@@ -434,11 +434,11 @@ Single company record (Admin only):
 
 ### 13.0 Environments and testing
 
-- **Two hosted Supabase projects:** `ze-dev` (development, tests, previews) and `ze-prod` (live). No local Supabase/Docker. Both in Mumbai (`ap-south-1`); Vercel functions run in `bom1` next to them. Set up with `scripts/setup-supabase.sh`.
-- Drizzle migrations run against `ze-dev` first, then `ze-prod` on release. Vercel preview deployments use `ze-dev`; production uses `ze-prod`.
+- **One hosted Supabase project** ("Zahir Enterprise", Singapore `ap-southeast-1`) serves development, tests, previews and production (ADR 0002). No local Supabase/Docker. Vercel functions run in `sin1` next to it.
+- Drizzle migrations apply directly to that project, so each is reviewed before it runs.
 - **Unit tests** (Vitest) cover pure logic with no database: status rules, numbering format, money and amount-in-words, permission checks, activity diff formatting.
-- **Database tests** (Vitest) run against `ze-dev` for triggers, the immutable Activity Log, numbering under concurrency and lock rules. Each test runs in a transaction that is rolled back, or uses rows tagged with a unique test run id that are cleaned up afterwards. They never run against `ze-prod` (guard: refuse to run unless `DATABASE_URL` matches the dev project ref).
-- **End-to-end tests** (Playwright) run against a local `next dev` connected to `ze-dev`, with seeded test users per role, at desktop and phone viewports. Core flow: create order with two suppliers → download WOs → Challan → Invoice → Completed, plus Staff margin-hiding.
+- **Database tests** (Vitest) run against the project for triggers, the immutable Activity Log, numbering under concurrency and lock rules. Because it holds live data, every test runs in a transaction that is always rolled back; never commit-then-delete, since Activity Log rows can't be deleted and committed test orders would burn real order numbers (guard: refuse to run unless `DATABASE_URL` matches `SUPABASE_PROJECT_REF`).
+- **End-to-end tests** (Playwright) run against a local `next dev` connected to the project, with seeded test users per role (marked, e.g. `@test.ze` emails), at desktop and phone viewports. They commit real rows, so they run before go-live only, followed by a one-time pre-launch reset (§15 Phase 6). Core flow: create order with two suppliers → download WOs → Challan → Invoice → Completed, plus Staff margin-hiding.
 
 
 ### 13.1 Data access and security
@@ -498,7 +498,7 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=   # sb_publishable_…
 SUPABASE_SECRET_KEY=                    # sb_secret_…, server only
 DATABASE_URL=                           # transaction pooler (port 6543), app runtime; Drizzle with prepare: false
 DIRECT_DATABASE_URL=                    # session pooler (port 5432), drizzle-kit migrations
-SUPABASE_PROJECT_REF=                   # ze-dev ref, checked by the DB test guard
+SUPABASE_PROJECT_REF=                   # project ref, checked by the DB test guard
 SUPABASE_DB_PASSWORD=                   # server only
 ```
 
@@ -718,6 +718,6 @@ Decisions confirmed with ZE, so they are not re-opened during the build.
 | 14 | No "Revised" marking on documents; staff check before re-sending. |
 | 15 | Sent WOs are cancelled, never deleted. Orders are never deleted. |
 | 16 | Admin-only, append-only Activity Log of every change, captured by database triggers (ADR 0001). |
-| 17 | Hosted Supabase for development (`ze-dev`) and production (`ze-prod`); no local Docker. Tests: Vitest (unit + DB against `ze-dev`) and Playwright (E2E). |
+| 17 | One hosted Supabase project for development and production (ADR 0002); no local Docker. Tests: Vitest (unit + DB, leaving no trace) and Playwright (E2E). |
 
 No open questions at this time.
