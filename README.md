@@ -13,7 +13,7 @@ Requires Node 24+ (`.nvmrc`) and pnpm.
 
 ```sh
 pnpm install
-cp .env.example .env.local   # fill from the ze-dev Supabase project
+scripts/setup-supabase.sh   # creates ze-dev/ze-prod with you and fills .env.local
 pnpm dev
 ```
 

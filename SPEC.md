@@ -434,7 +434,7 @@ Single company record (Admin only):
 
 ### 13.0 Environments and testing
 
-- **Two hosted Supabase projects:** `ze-dev` (development, tests, previews) and `ze-prod` (live). No local Supabase/Docker.
+- **Two hosted Supabase projects:** `ze-dev` (development, tests, previews) and `ze-prod` (live). No local Supabase/Docker. Both in Mumbai (`ap-south-1`); Vercel functions run in `bom1` next to them. Set up with `scripts/setup-supabase.sh`.
 - Drizzle migrations run against `ze-dev` first, then `ze-prod` on release. Vercel preview deployments use `ze-dev`; production uses `ze-prod`.
 - **Unit tests** (Vitest) cover pure logic with no database: status rules, numbering format, money and amount-in-words, permission checks, activity diff formatting.
 - **Database tests** (Vitest) run against `ze-dev` for triggers, the immutable Activity Log, numbering under concurrency and lock rules. Each test runs in a transaction that is rolled back, or uses rows tagged with a unique test run id that are cleaned up afterwards. They never run against `ze-prod` (guard: refuse to run unless `DATABASE_URL` matches the dev project ref).
@@ -445,9 +445,9 @@ Single company record (Admin only):
 
 - All data reads/writes go through **server code only** (Server Components, Server Actions, Route Handlers) using Drizzle over the Supabase connection string. The browser never queries tables directly; the Supabase browser client is used only for the auth session.
 - **Authorisation is enforced on the server** in every action/handler: load the current user's profile, check `is_active` and role against §3. One helper (e.g. `requireRole('admin','manager')`) used everywhere.
-- **Row Level Security is enabled on every table with no policies for `anon`/`authenticated`**, so even a leaked anon key cannot read data through the Supabase REST API. (Drizzle connects with a server-side role that bypasses RLS.)
+- **Row Level Security is enabled on every table with no policies for `anon`/`authenticated`**, so even a leaked publishable key cannot read data through the Supabase REST API. (Drizzle connects with a server-side role that bypasses RLS.)
 - Margin and buy totals are removed from responses for Staff on the server, not just hidden in the UI.
-- User creation/role changes use the Supabase Admin API with the service-role key, server-side only. The service-role key and database URL never reach the browser.
+- User creation/role changes use the Supabase Admin API with the secret key (`sb_secret_…`), server-side only. The secret key and database URLs never reach the browser. Supabase's legacy `anon`/`service_role` keys are not used (deprecated by end of 2026).
 - Login, logout and password reset go through Server Actions (not the browser client) so they can be logged, including failed logins.
 - Public sign-up is disabled in Supabase Auth settings.
 
@@ -494,9 +494,12 @@ src/
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=      # server only
-DATABASE_URL=                   # Supabase pooled connection string, server only
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=   # sb_publishable_…
+SUPABASE_SECRET_KEY=                    # sb_secret_…, server only
+DATABASE_URL=                           # transaction pooler (port 6543), app runtime; Drizzle with prepare: false
+DIRECT_DATABASE_URL=                    # session pooler (port 5432), drizzle-kit migrations
+SUPABASE_PROJECT_REF=                   # ze-dev ref, checked by the DB test guard
+SUPABASE_DB_PASSWORD=                   # server only
 ```
 
 ---
