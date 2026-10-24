@@ -15,6 +15,13 @@
       "when": 1792777375232,
       "tag": "0001_activity_log_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792859995742,
+      "tag": "0002_company_assets_bucket",
+      "breakpoints": true
     }
   ]
 }
