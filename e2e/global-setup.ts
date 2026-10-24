@@ -1,5 +1,5 @@
 import { chromium, type FullConfig } from "@playwright/test";
-import { seedUsers } from "../scripts/seed-users.ts";
+import { seedUsers } from "../scripts/seed-users.mts";
 import {
   ADMIN_STATE,
   E2E_USERS,

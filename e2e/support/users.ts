@@ -1,4 +1,4 @@
-import { requireEnv, type SeedUser } from "../../scripts/seed-users.ts";
+import { requireEnv, type SeedUser } from "../../scripts/seed-users.mts";
 
 // Seeded test Users, marked by @test.ze (ADR 0002). Specs that end a session
 // or change a password get one User per Playwright project, so desktop and

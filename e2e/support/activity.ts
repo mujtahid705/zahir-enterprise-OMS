@@ -1,5 +1,5 @@
 import postgres from "postgres";
-import { requireEnv } from "../../scripts/seed-users.ts";
+import { requireEnv } from "../../scripts/seed-users.mts";
 
 // Reads Activity Log events for assertions until the Activity screen exists.
 

@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { expect, test, type Page } from "@playwright/test";
-import { requireEnv } from "../scripts/seed-users.ts";
+import { requireEnv } from "../scripts/seed-users.mts";
 import { eventsAfter, lastActivityId } from "./support/activity";
 import { E2E_USERS, e2ePassword, projectUser } from "./support/users";
 

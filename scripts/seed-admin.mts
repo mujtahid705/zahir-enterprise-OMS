@@ -1,4 +1,4 @@
-import { requireEnv, seedUsers } from "./seed-users.ts";
+import { requireEnv, seedUsers } from "./seed-users.mts";
 
 // Seeds the first Admin, who then creates everyone else in the app.
 // Usage (see README):

@@ -16,7 +16,7 @@
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed-admin": "node --env-file=.env.local scripts/seed-admin.ts",
+    "db:seed-admin": "node --env-file=.env.local scripts/seed-admin.mts",
     "check": "pnpm lint && pnpm typecheck && pnpm format:check && pnpm test"
   },
   "dependencies": {
