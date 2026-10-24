@@ -4,7 +4,8 @@ import { ADMIN_STATE } from "./e2e/support/users";
 
 config({ path: [".env.local", ".env"], quiet: true });
 
-const PORT = 3100;
+// Next allows one `next dev` per project: set E2E_PORT=3000 to reuse yours.
+const PORT = Number(process.env.E2E_PORT ?? 3100);
 
 // E2E runs against local `next dev` connected to the single Supabase project,
 // with seeded @test.ze Users. It commits real rows, so it runs before go-live
