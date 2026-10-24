@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { requireRole } from "@/lib/auth";
 import { PERMISSIONS, ROLE_LABEL } from "@/lib/permissions";
 import { USERS_PAGE_SIZE, listUsers } from "@/services/users";
-import { DeactivatedBadge } from "./deactivated-badge";
+import { DeactivatedBadge } from "@/components/deactivated-badge";
 
 export const metadata: Metadata = { title: "Users" };
 

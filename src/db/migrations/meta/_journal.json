@@ -22,6 +22,20 @@
       "when": 1792859995742,
       "tag": "0002_company_assets_bucket",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792860000705,
+      "tag": "0003_master_data_parties",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792860041691,
+      "tag": "0004_parties_activity_triggers",
+      "breakpoints": true
     }
   ]
 }

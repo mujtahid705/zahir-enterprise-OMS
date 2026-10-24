@@ -1,5 +1,6 @@
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { activityAfter, eventsAfter, lastActivityId } from "./support/activity";
+import { signInAs } from "./support/session";
 import { e2ePassword, projectUser } from "./support/users";
 
 // Phase 1 done-when (SPEC §15): the Admin creates a Manager and a Staff User,
@@ -21,20 +22,6 @@ async function addUser(
   await page.getByLabel("Temporary password").fill(TEMP_PASSWORD);
   await page.getByRole("button", { name: "Add User" }).click();
   await expect(page.getByRole("heading", { name: user.name })).toBeVisible();
-}
-
-async function signInAs(browser: Browser, email: string, password: string) {
-  const context = await browser.newContext({
-    storageState: { cookies: [], origins: [] },
-    viewport: { width: 1440, height: 900 },
-  });
-  const page = await context.newPage();
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page).toHaveURL("/");
-  return page;
 }
 
 async function sidebarLabels(page: Page) {

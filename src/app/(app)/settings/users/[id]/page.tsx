@@ -7,7 +7,7 @@ import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { PERMISSIONS, ROLE_LABEL } from "@/lib/permissions";
 import { getUser } from "@/services/users";
-import { DeactivatedBadge } from "../deactivated-badge";
+import { DeactivatedBadge } from "@/components/deactivated-badge";
 import { ActiveForm, ResetPasswordForm, RoleForm } from "./user-forms";
 
 export const metadata: Metadata = { title: "User" };

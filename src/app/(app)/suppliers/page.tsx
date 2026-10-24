@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { PlaceholderPage } from "@/components/shell/placeholder-page";
+import { PartyListPage } from "@/components/parties/party-pages";
 
 export const metadata: Metadata = { title: "Suppliers" };
 
-export default function Page() {
-  return <PlaceholderPage title="Suppliers" message="No suppliers yet" />;
+export default function Page({ searchParams }: PageProps<"/suppliers">) {
+  return <PartyListPage kind="supplier" searchParams={searchParams} />;
 }

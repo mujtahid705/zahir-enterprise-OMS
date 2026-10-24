@@ -12,6 +12,7 @@ export const ADMIN_STATE = "e2e/.auth/admin.json";
 
 export const E2E_USERS = {
   admin: { email: "admin@test.ze", fullName: "Test Admin", role: "admin" },
+  staff: { email: "staff@test.ze", fullName: "Test Staff", role: "staff" },
   deactivated: {
     email: "deactivated@test.ze",
     fullName: "Test Deactivated",

@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -69,6 +70,44 @@ export const companySettings = pgTable(
   },
   () => [uniqueIndex("company_settings_singleton").using("btree", sql`(true)`)],
 ).enableRLS();
+
+// Customers and Suppliers share one shape (SPEC §4.1, §4.2); only a
+// Supplier's WhatsApp number is required.
+function partyColumns({ whatsappRequired }: { whatsappRequired: boolean }) {
+  const whatsapp = text("whatsapp");
+  return {
+    id: uuid("id").primaryKey().defaultRandom(),
+    code: text("code").notNull().unique(),
+    name: text("name").notNull(),
+    contactPerson: text("contact_person"),
+    phone: text("phone").notNull(),
+    whatsapp: whatsappRequired ? whatsapp.notNull() : whatsapp,
+    email: text("email"),
+    address: text("address").notNull(),
+    notes: text("notes"),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: uuid("created_by").references(() => profiles.id),
+    updatedBy: uuid("updated_by").references(() => profiles.id),
+    ...timestamps,
+  };
+}
+
+export const customers = pgTable(
+  "customers",
+  partyColumns({ whatsappRequired: false }),
+).enableRLS();
+
+export const suppliers = pgTable(
+  "suppliers",
+  partyColumns({ whatsappRequired: true }),
+).enableRLS();
+
+// Master data codes (C-0001, S-0001, P-0001), one global counter per prefix.
+// Not logged: the record that takes the code is.
+export const codeSequences = pgTable("code_sequences", {
+  prefix: text("prefix").primaryKey(),
+  lastValue: integer("last_value").notNull(),
+}).enableRLS();
 
 // Append-only (SPEC §11.3, ADR 0001). Data rows come from log_row_change();
 // event rows are written by the app.
