@@ -3,7 +3,7 @@ import { describe, expect } from "vitest";
 import type { Tx } from "@/db/client";
 import { activityLog, companySettings, profiles } from "@/db/schema";
 import { asSystem, createUser } from "@/db/test/fixtures";
-import { dbTest, inSavepoint } from "@/db/test/rollback";
+import { dbError, dbTest, inSavepoint } from "@/db/test/rollback";
 import { withUser } from "@/db/with-user";
 
 function logFor(tx: Tx, entityId: string) {
@@ -153,7 +153,7 @@ describe("writes outside withUser", () => {
           .set({ fullName: "Unattributed" })
           .where(eq(profiles.id, staff.id)),
       ),
-    ).rejects.toThrow(/without a user/);
+    ).rejects.toMatchObject(dbError(/without a user/));
   });
 
   dbTest("fail after an earlier withUser has returned", async (tx) => {
@@ -176,7 +176,7 @@ describe("writes outside withUser", () => {
           .set({ role: "admin" })
           .where(eq(profiles.id, staff.id)),
       ),
-    ).rejects.toThrow(/without a user/);
+    ).rejects.toMatchObject(dbError(/without a user/));
   });
 
   dbTest("fail when truncating a logged table", async (tx) => {
@@ -184,7 +184,7 @@ describe("writes outside withUser", () => {
 
     await expect(
       withUser(admin, (w) => w.execute(sql`truncate company_settings`), tx),
-    ).rejects.toThrow(/cannot be logged/);
+    ).rejects.toMatchObject(dbError(/cannot be logged/));
   });
 
   dbTest("succeed as the system actor, unattributed", async (tx) => {
@@ -242,7 +242,7 @@ describe("the activity log", () => {
     ]) {
       await expect(
         inSavepoint(tx, (sp) => sp.execute(statement)),
-      ).rejects.toThrow(/append-only/);
+      ).rejects.toMatchObject(dbError(/append-only/));
     }
   });
 });

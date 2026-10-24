@@ -1,5 +1,5 @@
 import { TransactionRollbackError } from "drizzle-orm/errors";
-import { afterAll, it } from "vitest";
+import { afterAll, expect, it } from "vitest";
 import { db, type Tx } from "@/db/client";
 
 afterAll(() => db.$client.end());
@@ -27,4 +27,12 @@ export function dbTest(name: string, fn: (tx: Tx) => Promise<void>) {
 // transaction.
 export function inSavepoint<T>(tx: Tx, fn: (sp: Tx) => Promise<T>) {
   return tx.transaction(fn);
+}
+
+// Drizzle wraps Postgres errors as "Failed query: …"; the database's own
+// message is on `cause`. Use with `.rejects.toMatchObject(dbError(/…/))`.
+export function dbError(pattern: RegExp) {
+  return {
+    cause: expect.objectContaining({ message: expect.stringMatching(pattern) }),
+  };
 }
