@@ -194,13 +194,9 @@
         "activity_log_user_id_profiles_id_fk": {
           "name": "activity_log_user_id_profiles_id_fk",
           "tableFrom": "activity_log",
-          "columnsFrom": [
-            "user_id"
-          ],
+          "columnsFrom": ["user_id"],
           "tableTo": "profiles",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -363,14 +359,10 @@
         "profiles_id_users_id_fk": {
           "name": "profiles_id_users_id_fk",
           "tableFrom": "profiles",
-          "columnsFrom": [
-            "id"
-          ],
+          "columnsFrom": ["id"],
           "tableTo": "users",
           "schemaTo": "auth",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "no action"
         }
@@ -386,19 +378,12 @@
     "public.activity_kind": {
       "name": "activity_kind",
       "schema": "public",
-      "values": [
-        "data",
-        "event"
-      ]
+      "values": ["data", "event"]
     },
     "public.document_type": {
       "name": "document_type",
       "schema": "public",
-      "values": [
-        "work_order",
-        "challan",
-        "invoice"
-      ]
+      "values": ["work_order", "challan", "invoice"]
     },
     "public.order_status": {
       "name": "order_status",
@@ -415,28 +400,17 @@
     "public.status_source": {
       "name": "status_source",
       "schema": "public",
-      "values": [
-        "auto",
-        "manual"
-      ]
+      "values": ["auto", "manual"]
     },
     "public.user_role": {
       "name": "user_role",
       "schema": "public",
-      "values": [
-        "admin",
-        "manager",
-        "staff"
-      ]
+      "values": ["admin", "manager", "staff"]
     },
     "public.wo_status": {
       "name": "wo_status",
       "schema": "public",
-      "values": [
-        "pending",
-        "sent",
-        "cancelled"
-      ]
+      "values": ["pending", "sent", "cancelled"]
     }
   },
   "schemas": {},

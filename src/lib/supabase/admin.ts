@@ -1,6 +1,7 @@
 import "server-only";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, StorageApiError } from "@supabase/supabase-js";
 import { UserInputError } from "@/lib/errors";
+import type { AssetStorage } from "@/services/company-settings";
 import type { AuthAdmin } from "@/services/users";
 
 const url = () => process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -52,5 +53,40 @@ export const supabaseAuthAdmin: AuthAdmin = {
     if (error) return false;
     await client.auth.signOut({ scope: "local" });
     return true;
+  },
+};
+
+const COMPANY_ASSETS = "company-assets";
+
+// The private company-assets bucket (logo, signature). The browser never
+// reaches it: images are served through the app.
+export const supabaseCompanyAssets: AssetStorage = {
+  async upload(path, bytes, contentType) {
+    const { error } = await adminClient()
+      .storage.from(COMPANY_ASSETS)
+      .upload(path, bytes, { contentType });
+    if (error) throw error;
+  },
+
+  async download(path) {
+    const { data, error } = await adminClient()
+      .storage.from(COMPANY_ASSETS)
+      .download(path);
+    // A row pointing at a missing file shows as no image, not an error.
+    if (error instanceof StorageApiError && error.statusCode === "404") {
+      return null;
+    }
+    if (error) throw error;
+    return {
+      bytes: new Uint8Array(await data.arrayBuffer()),
+      contentType: data.type,
+    };
+  },
+
+  async remove(path) {
+    const { error } = await adminClient()
+      .storage.from(COMPANY_ASSETS)
+      .remove([path]);
+    if (error) throw error;
   },
 };
