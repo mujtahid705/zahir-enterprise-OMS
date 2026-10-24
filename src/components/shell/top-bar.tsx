@@ -1,12 +1,13 @@
 import Image from "next/image";
+import { Suspense } from "react";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { PLACEHOLDER_USER } from "@/components/shell/placeholder-user";
-import { UserMenu } from "@/components/shell/user-menu";
+import { UserMenu, type Tone } from "@/components/shell/user-menu";
+import { getCurrentUser } from "@/lib/auth";
+import { cn } from "@/lib/utils";
 
 // Page header. Navy with the white mark on phones, white from 768px.
 export function TopBar({ title }: { title: string }) {
-  const user = PLACEHOLDER_USER;
   return (
     <header className="sticky top-0 z-30 border-b border-sidebar-border bg-navy pt-[env(safe-area-inset-top)] md:border-border md:bg-surface md:pt-0">
       <div className="flex h-14 items-center gap-3 px-4 md:h-16 md:px-8">
@@ -34,12 +35,33 @@ export function TopBar({ title }: { title: string }) {
           />
         </div>
         <span className="md:hidden">
-          <UserMenu user={user} tone="navy" />
+          <Suspense fallback={<UserMenuPlaceholder tone="navy" />}>
+            <CurrentUserMenu tone="navy" />
+          </Suspense>
         </span>
         <span className="hidden md:inline-flex">
-          <UserMenu user={user} />
+          <Suspense fallback={<UserMenuPlaceholder tone="light" />}>
+            <CurrentUserMenu tone="light" />
+          </Suspense>
         </span>
       </div>
     </header>
+  );
+}
+
+async function CurrentUserMenu({ tone }: { tone: Tone }) {
+  const { name, role } = await getCurrentUser();
+  return <UserMenu user={{ name, role }} tone={tone} />;
+}
+
+function UserMenuPlaceholder({ tone }: { tone: Tone }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "block size-9 rounded-full",
+        tone === "navy" ? "bg-white/10" : "border border-border-strong",
+      )}
+    />
   );
 }

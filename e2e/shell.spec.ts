@@ -1,6 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-test("login screen shows the brand and sign-in form", async ({ page }) => {
+test("login screen shows the brand and sign-in form", async ({ browser }) => {
+  const page = await browser.newPage({
+    storageState: { cookies: [], origins: [] },
+  });
   await page.goto("/login");
   await expect(
     page.getByRole("img", { name: "Zahir Enterprise" }),

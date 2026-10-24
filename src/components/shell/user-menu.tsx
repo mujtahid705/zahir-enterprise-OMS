@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { LogOut, UserRound } from "lucide-react";
+import { logout } from "@/actions/auth";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +15,7 @@ import { cn } from "@/lib/utils";
 import type { Role } from "@/lib/nav";
 
 export type ShellUser = { name: string; role: Role };
+export type Tone = "light" | "navy";
 
 const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
@@ -35,7 +37,7 @@ export function UserMenu({
   tone = "light",
 }: {
   user: ShellUser;
-  tone?: "light" | "navy";
+  tone?: Tone;
 }) {
   return (
     <DropdownMenu>
@@ -64,11 +66,14 @@ export function UserMenu({
             Account
           </Link>
         </DropdownMenuItem>
-        {/* Wired to the logout Server Action in the auth ticket. */}
-        <DropdownMenuItem disabled>
-          <LogOut strokeWidth={1.5} />
-          Log out
-        </DropdownMenuItem>
+        <form action={logout}>
+          <DropdownMenuItem asChild>
+            <button type="submit" className="w-full">
+              <LogOut strokeWidth={1.5} />
+              Log out
+            </button>
+          </DropdownMenuItem>
+        </form>
       </DropdownMenuContent>
     </DropdownMenu>
   );
