@@ -1,24 +1,11 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { activityAfter, lastActivityId } from "./support/activity";
+import { addCustomer } from "./support/master-data";
 import { signInAs } from "./support/session";
 import { E2E_USERS, e2ePassword } from "./support/users";
 
 // Customers and Suppliers (SPEC §4.1, §4.2, issue #7). Records are new each
 // run and burn real codes; E2E runs before go-live only (ADR 0002).
-// Fields are found by role, not label: Next keeps the page just left mounted
-// but hidden, and getByLabel would also match its form.
-
-async function addCustomer(page: Page, name: string) {
-  await page.goto("/customers/new");
-  await page.getByRole("textbox", { name: "Name", exact: true }).fill(name);
-  await page.getByRole("textbox", { name: "Phone" }).fill("01711000000");
-  await page
-    .getByRole("textbox", { name: "Address" })
-    .fill("12 Station Road, Dhaka");
-  await page.getByRole("button", { name: "Add Customer" }).click();
-  await expect(page.getByRole("heading", { name })).toBeVisible();
-  return page.url();
-}
 
 test("Admin adds, edits, finds, deactivates and deletes a Customer", async ({
   page,
@@ -57,7 +44,7 @@ test("Admin adds, edits, finds, deactivates and deletes a Customer", async ({
   await expect(page).toHaveURL("/customers");
 
   const log = (await activityAfter(before)).filter((row) =>
-    row.entityLabel.endsWith(name),
+    row.entityLabel?.endsWith(name),
   );
   expect(log.map((row) => row.action)).toEqual([
     "insert",

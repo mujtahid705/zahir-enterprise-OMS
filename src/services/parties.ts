@@ -1,22 +1,26 @@
-import { and, asc, count, eq, ilike, or, sql } from "drizzle-orm";
-import { z } from "zod";
+import { and, asc, count, eq, ilike, or } from "drizzle-orm";
 import { db, type Db, type Tx } from "@/db/client";
 import {
-  codeSequences,
   customers as customersTable,
   suppliers as suppliersTable,
 } from "@/db/schema";
 import { withUser } from "@/db/with-user";
 import type { CurrentUser } from "@/lib/auth";
-import { NotAllowedError, UserInputError } from "@/lib/errors";
-import { formatCode } from "@/lib/numbering";
+import { UserInputError } from "@/lib/errors";
 import {
   PARTY,
   type PartyInput,
   type PartyKind,
   type PartyStatus,
 } from "@/lib/parties";
-import { can, type Permission } from "@/lib/permissions";
+import {
+  MASTER_DATA_PAGE_SIZE,
+  authorize,
+  containing,
+  isForeignKeyViolation,
+  nextCode,
+  parse,
+} from "@/services/master-data";
 
 // Customers and Suppliers (SPEC §4.1, §4.2, §4.4). Everyone may read; Admin
 // and Manager write; only an Admin deletes. Every function checks the acting
@@ -24,7 +28,7 @@ import { can, type Permission } from "@/lib/permissions";
 
 type Deps = { executor?: Db | Tx };
 
-export const PARTIES_PAGE_SIZE = 25;
+export const PARTIES_PAGE_SIZE = MASTER_DATA_PAGE_SIZE;
 
 // Both tables have the same columns (Supplier WhatsApp is only NOT NULL), so
 // one query shape serves both.
@@ -32,38 +36,6 @@ const TABLES = {
   customer: customersTable,
   supplier: suppliersTable as unknown as typeof customersTable,
 };
-
-function authorize(actor: CurrentUser, permission: Permission) {
-  if (!can(actor.role, permission)) throw new NotAllowedError(permission);
-}
-
-function parse<T>(schema: z.ZodType<T, PartyInput>, input: unknown): T {
-  const result = schema.safeParse(input);
-  if (!result.success)
-    throw new UserInputError(result.error.issues[0]!.message);
-  return result.data;
-}
-
-// Takes the next value of the prefix's global counter (SPEC §14
-// code_sequences). The row lock serialises concurrent creates; a code taken by
-// a record that is later deleted is never handed out again.
-async function nextCode(tx: Tx, prefix: string): Promise<string> {
-  const [{ value }] = await tx
-    .insert(codeSequences)
-    .values({ prefix, lastValue: 1 })
-    .onConflictDoUpdate({
-      target: codeSequences.prefix,
-      set: { lastValue: sql`${codeSequences.lastValue} + 1` },
-    })
-    .returning({ value: codeSequences.lastValue });
-  return formatCode(prefix, value);
-}
-
-// Drizzle wraps the Postgres error; its SQLSTATE is on `cause`.
-function isForeignKeyViolation(error: unknown): boolean {
-  const cause = error instanceof Error ? error.cause : undefined;
-  return (cause as { code?: string } | undefined)?.code === "23503";
-}
 
 function parties(kind: PartyKind) {
   const { prefix, label, schema } = PARTY[kind];
@@ -80,7 +52,7 @@ function parties(kind: PartyKind) {
     }: { query?: string; page?: number; status?: PartyStatus },
     { executor = db }: Deps = {},
   ) {
-    const term = `%${query.trim().replace(/[\\%_]/g, "\\$&")}%`;
+    const term = containing(query);
     const where = and(
       or(
         ilike(table.code, term),

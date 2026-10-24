@@ -36,6 +36,20 @@
       "when": 1792860041691,
       "tag": "0004_parties_activity_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792862182775,
+      "tag": "0005_master_data_products",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792862189865,
+      "tag": "0006_products_activity_triggers",
+      "breakpoints": true
     }
   ]
 }

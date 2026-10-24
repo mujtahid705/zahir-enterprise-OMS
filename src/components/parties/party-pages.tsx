@@ -3,8 +3,12 @@ import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
 import { ChevronLeft, Plus } from "lucide-react";
 import { z } from "zod";
+import { deletePartyAction, setPartyActiveAction } from "@/actions/parties";
 import { DeactivatedBadge } from "@/components/deactivated-badge";
 import { EmptyState } from "@/components/empty-state";
+import { Pager } from "@/components/pager";
+import { ProductsTable } from "@/components/products/products-table";
+import { RecordActions } from "@/components/record-actions";
 import { RoleGate } from "@/components/role-gate";
 import { TopBar } from "@/components/shell/top-bar";
 import { Button } from "@/components/ui/button";
@@ -20,7 +24,7 @@ import {
 import { PERMISSIONS, can } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { PARTIES_PAGE_SIZE, PARTY_SERVICES } from "@/services/parties";
-import { PartyActions } from "./party-actions";
+import { products } from "@/services/products";
 import { PartyForm } from "./party-form";
 
 // The Customer and Supplier screens (SPEC §9): list, detail, new, edit. Each
@@ -218,28 +222,13 @@ async function PartyList({
         )}
       </div>
 
-      {pages > 1 && (
-        <nav
-          aria-label="Pages"
-          className="flex items-center justify-between text-sm text-ink-muted"
-        >
-          <span className="num">
-            Page {page} of {pages} · {total} {plural}
-          </span>
-          <div className="flex gap-2">
-            {page > 1 && (
-              <Button asChild variant="outline">
-                <Link href={href({ page: page - 1 })}>Previous</Link>
-              </Button>
-            )}
-            {page < pages && (
-              <Button asChild variant="outline">
-                <Link href={href({ page: page + 1 })}>Next</Link>
-              </Button>
-            )}
-          </div>
-        </nav>
-      )}
+      <Pager
+        page={page}
+        pages={pages}
+        total={total}
+        noun={plural}
+        href={(page) => href({ page })}
+      />
     </section>
   );
 }
@@ -247,26 +236,84 @@ async function PartyList({
 export function PartyDetailPage({
   kind,
   params,
+  searchParams,
 }: {
   kind: PartyKind;
   params: IdParams;
+  searchParams: SearchParams;
 }) {
   return (
     <Page title={PARTY[kind].plural}>
-      <PartyDetail kind={kind} params={params} />
+      <PartyDetail kind={kind} params={params} searchParams={searchParams} />
     </Page>
   );
 }
 
+const TABS = ["details", "products"] as const;
+
 async function PartyDetail({
   kind,
   params,
+  searchParams,
 }: {
   kind: PartyKind;
   params: IdParams;
+  searchParams: SearchParams;
 }) {
-  const { plural, path } = PARTY[kind];
+  const { label, plural, path } = PARTY[kind];
   const { actor, record } = await loadRecord(kind, params);
+  const tab = z
+    .enum(TABS)
+    .catch("details")
+    .parse((await searchParams).tab);
+  const tabHref = (value: (typeof TABS)[number]) =>
+    `${path}/${record.id}${value === "details" ? "" : `?tab=${value}`}`;
+
+  return (
+    <section className="flex max-w-3xl flex-col gap-6">
+      <div>
+        <BackLink href={path}>{plural}</BackLink>
+        <p className="text-sm text-ink-muted num">{record.code}</p>
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-navy">
+          {record.name}
+          {!record.isActive && <DeactivatedBadge />}
+        </h2>
+      </div>
+
+      <nav
+        aria-label={`${label} sections`}
+        className="flex gap-6 border-b border-border text-sm"
+      >
+        {TABS.map((value) => (
+          <Link
+            key={value}
+            href={tabHref(value)}
+            aria-current={value === tab ? "page" : undefined}
+            className={cn(
+              "-mb-px border-b-2 pb-2 capitalize",
+              value === tab
+                ? "border-navy font-medium text-navy"
+                : "border-transparent text-ink-muted hover:text-navy",
+            )}
+          >
+            {value}
+          </Link>
+        ))}
+      </nav>
+
+      {tab === "details" ? (
+        <PartyDetails kind={kind} actor={actor} record={record} />
+      ) : (
+        <PartyProducts kind={kind} actor={actor} record={record} />
+      )}
+    </section>
+  );
+}
+
+type Loaded = Awaited<ReturnType<typeof loadRecord>>;
+
+function PartyDetails({ kind, actor, record }: { kind: PartyKind } & Loaded) {
+  const { label, path } = PARTY[kind];
   const details: [string, string | null][] = [
     ["Contact person", record.contactPerson],
     ["Phone", record.phone],
@@ -277,16 +324,7 @@ async function PartyDetail({
   ];
 
   return (
-    <section className="flex max-w-2xl flex-col gap-8">
-      <div>
-        <BackLink href={path}>{plural}</BackLink>
-        <p className="text-sm text-ink-muted num">{record.code}</p>
-        <h2 className="flex items-center gap-2 text-lg font-semibold text-navy">
-          {record.name}
-          {!record.isActive && <DeactivatedBadge />}
-        </h2>
-      </div>
-
+    <>
       <dl className="grid gap-x-8 gap-y-4 rounded-xl border border-border bg-surface p-4 sm:grid-cols-2 md:p-6">
         {details.map(([term, value]) => (
           <div key={term} className="flex flex-col gap-1">
@@ -301,15 +339,85 @@ async function PartyDetail({
       </dl>
 
       {can(actor.role, "manageMasterData") && (
-        <PartyActions
-          kind={kind}
-          id={record.id}
+        <RecordActions
+          label={label}
           name={record.name}
+          editHref={`${path}/${record.id}/edit`}
           isActive={record.isActive}
-          canDelete={can(actor.role, "deleteMasterData")}
+          setActive={setPartyActiveAction.bind(
+            null,
+            kind,
+            record.id,
+            !record.isActive,
+          )}
+          remove={
+            can(actor.role, "deleteMasterData")
+              ? deletePartyAction.bind(null, kind, record.id)
+              : undefined
+          }
         />
       )}
-    </section>
+    </>
+  );
+}
+
+// SPEC §4.1, §4.2: a Customer's Products (Admin/Manager add here, and see buy
+// price and margin), or the Products a Supplier makes (read-only, with buy
+// price). The first page; the Product list has the rest.
+async function PartyProducts({
+  kind,
+  actor,
+  record,
+}: { kind: PartyKind } & Loaded) {
+  const filter =
+    kind === "customer" ? { customerId: record.id } : { supplierId: record.id };
+  const { rows, total } = await products.list(actor, {
+    ...filter,
+    status: "all",
+  });
+  // A deactivated Customer is not offered for new Products (SPEC §4.4).
+  const canAdd =
+    kind === "customer" &&
+    record.isActive &&
+    can(actor.role, "manageMasterData");
+  const seeMargin = can(actor.role, "seeMargin");
+
+  return (
+    <div className="flex flex-col gap-4">
+      {canAdd && (
+        <Button asChild className="self-start">
+          <Link href={`/products/new?customer=${record.id}`}>
+            <Plus strokeWidth={1.5} />
+            Add Product
+          </Link>
+        </Button>
+      )}
+      <ProductsTable
+        rows={rows}
+        columns={
+          kind === "customer"
+            ? [
+                "supplier",
+                "sellPrice",
+                ...(seeMargin ? (["buyPrice", "margin"] as const) : []),
+              ]
+            : ["customer", "buyPrice"]
+        }
+        empty={
+          kind === "customer"
+            ? "No products for this customer yet."
+            : "This supplier makes no products yet."
+        }
+      />
+      {total > rows.length && (
+        <Link
+          href={`/products?${kind}=${record.id}&status=all`}
+          className="text-sm text-navy hover:underline"
+        >
+          View all {total} in Products
+        </Link>
+      )}
+    </div>
   );
 }
 

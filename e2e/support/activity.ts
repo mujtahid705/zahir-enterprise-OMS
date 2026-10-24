@@ -43,7 +43,12 @@ export async function eventsAfter(
   }
 }
 
-export type LogRow = { action: string; entityLabel: string; userName: string };
+// Event rows (login, …) have no record, so no label.
+export type LogRow = {
+  action: string;
+  entityLabel: string | null;
+  userName: string;
+};
 
 // Every row (data and event) after the given id.
 export async function activityAfter(afterId: number): Promise<LogRow[]> {

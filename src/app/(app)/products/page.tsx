@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { PlaceholderPage } from "@/components/shell/placeholder-page";
+import { ProductListPage } from "@/components/products/product-pages";
 
 export const metadata: Metadata = { title: "Products" };
 
-export default function Page() {
-  return <PlaceholderPage title="Products" message="No products yet" />;
+export default function Page({ searchParams }: PageProps<"/products">) {
+  return <ProductListPage searchParams={searchParams} />;
 }

@@ -1,19 +1,11 @@
 import { z } from "zod";
+import { optional, required } from "@/lib/fields";
 
 // Customers and Suppliers (SPEC §4.1, §4.2): same fields, same screens. These
 // schemas validate the forms and, again, the service on the server.
 
 export const PARTY_KINDS = ["customer", "supplier"] as const;
 export type PartyKind = (typeof PARTY_KINDS)[number];
-
-const required = (message: string) => z.string().trim().min(1, message);
-
-// Blank optional fields are stored as null.
-const optional = z
-  .string()
-  .trim()
-  .optional()
-  .transform((value) => value || null);
 
 const fields = {
   name: required("Enter a name."),

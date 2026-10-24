@@ -1,36 +1,42 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useId } from "react";
+import { useActionState, useId, type ReactNode } from "react";
 import { Pencil } from "lucide-react";
-import { deletePartyAction, setPartyActiveAction } from "@/actions/parties";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FormNotice } from "@/components/form-notice";
 import { Button } from "@/components/ui/button";
-import { PARTY, type PartyKind } from "@/lib/parties";
+import type { FormState } from "@/lib/form-state";
 
-// Edit, deactivate/reactivate and (Admin) delete for one record. Shown only
-// to roles that may use them; the actions check again.
-export function PartyActions({
-  kind,
-  id,
+// Edit, deactivate/reactivate and (Admin) delete for one master data record
+// (SPEC §4.4). The page binds the Server Actions to the record and shows this
+// only to roles that may use them; the actions check again.
+export function RecordActions({
+  label,
   name,
+  editHref,
   isActive,
-  canDelete,
+  setActive,
+  remove,
+  children,
 }: {
-  kind: PartyKind;
-  id: string;
+  label: string;
   name: string;
+  editHref: string;
   isActive: boolean;
-  canDelete: boolean;
+  // Flips the active flag.
+  setActive: () => Promise<FormState>;
+  // Only for roles that may delete.
+  remove?: () => Promise<FormState>;
+  // More buttons after Edit.
+  children?: ReactNode;
 }) {
-  const { label, path } = PARTY[kind];
   const [activeState, activeAction, activePending] = useActionState(
-    setPartyActiveAction.bind(null, kind, id, !isActive),
+    setActive,
     undefined,
   );
   const [deleteState, deleteAction, deletePending] = useActionState(
-    deletePartyAction.bind(null, kind, id),
+    remove ?? (async () => undefined),
     undefined,
   );
   const lower = label.toLowerCase();
@@ -43,11 +49,12 @@ export function PartyActions({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-2">
         <Button asChild>
-          <Link href={`${path}/${id}/edit`}>
+          <Link href={editHref}>
             <Pencil strokeWidth={1.5} />
             Edit {lower}
           </Link>
         </Button>
+        {children}
         <form id={activeFormId} action={activeAction}>
           {isActive ? (
             <ConfirmDialog
@@ -72,7 +79,7 @@ export function PartyActions({
             </Button>
           )}
         </form>
-        {canDelete && (
+        {remove && (
           <form id={deleteFormId} action={deleteAction}>
             <ConfirmDialog
               formId={deleteFormId}

@@ -2,9 +2,11 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
   index,
   integer,
   jsonb,
+  numeric,
   pgEnum,
   pgTable,
   text,
@@ -100,6 +102,41 @@ export const customers = pgTable(
 export const suppliers = pgTable(
   "suppliers",
   partyColumns({ whatsappRequired: true }),
+).enableRLS();
+
+// A Product belongs to one Customer and is made by one Supplier; prices are
+// per piece (SPEC §4.3). No ON DELETE CASCADE: a Customer or Supplier with
+// Products can't be deleted.
+export const products = pgTable(
+  "products",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    code: text("code").notNull().unique(),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id),
+    name: text("name").notNull(),
+    size: text("size"),
+    thickness: text("thickness"),
+    colour: text("colour"),
+    printDetails: text("print_details"),
+    description: text("description"),
+    sellPrice: numeric("sell_price", { precision: 12, scale: 2 }).notNull(),
+    buyPrice: numeric("buy_price", { precision: 12, scale: 2 }).notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    createdBy: uuid("created_by").references(() => profiles.id),
+    updatedBy: uuid("updated_by").references(() => profiles.id),
+    ...timestamps,
+  },
+  (t) => [
+    index("products_customer_id_idx").on(t.customerId),
+    index("products_supplier_id_idx").on(t.supplierId),
+    check("products_sell_price_positive", sql`${t.sellPrice} > 0`),
+    check("products_buy_price_positive", sql`${t.buyPrice} > 0`),
+  ],
 ).enableRLS();
 
 // Master data codes (C-0001, S-0001, P-0001), one global counter per prefix.
