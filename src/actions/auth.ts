@@ -8,12 +8,11 @@ import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
 import { logEvent } from "@/lib/activity";
 import { getCurrentUser } from "@/lib/auth";
+import type { FormState } from "@/lib/form-state";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 // Sign-in, sign-out and password reset run here, not in the browser client,
 // so every one can be logged (SPEC §13.1, §11.1).
-
-export type FormState = { error?: string; message?: string } | undefined;
 
 const credentials = z.object({
   email: z.email(),

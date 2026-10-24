@@ -1,6 +1,5 @@
 import Image from "next/image";
 import type { ReactNode } from "react";
-import type { FormState } from "@/actions/auth";
 
 // Thin brass lines at the logo's cut angle (~54°), 20% opacity, in one corner.
 function BrassDiagonals({ className }: { className?: string }) {
@@ -57,23 +56,4 @@ export function AuthScreen({
       </main>
     </div>
   );
-}
-
-// Inline result under an auth form.
-export function FormNotice({ state }: { state: FormState }) {
-  if (state?.error) {
-    return (
-      <p role="alert" className="text-sm text-danger">
-        {state.error}
-      </p>
-    );
-  }
-  if (state?.message) {
-    return (
-      <p role="status" className="text-sm text-ink-muted">
-        {state.message}
-      </p>
-    );
-  }
-  return null;
 }

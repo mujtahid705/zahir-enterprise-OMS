@@ -1,11 +1,11 @@
 import "server-only";
 import { eq } from "drizzle-orm";
-import { redirect } from "next/navigation";
+import { forbidden, redirect } from "next/navigation";
 import { connection } from "next/server";
 import { cache } from "react";
 import { db } from "@/db/client";
 import { profiles } from "@/db/schema";
-import type { Role } from "@/lib/nav";
+import type { Role } from "@/lib/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type CurrentUser = {
@@ -39,3 +39,13 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser> => {
     role: profile.role,
   };
 });
+
+// Guards a page or Server Action: the signed-in User must hold one of the
+// roles (usually from PERMISSIONS in src/lib/permissions.ts), else 403.
+export async function requireRole(
+  ...roles: readonly Role[]
+): Promise<CurrentUser> {
+  const user = await getCurrentUser();
+  if (!roles.includes(user.role)) forbidden();
+  return user;
+}

@@ -42,3 +42,17 @@ export async function eventsAfter(
     await sql.end();
   }
 }
+
+export type LogRow = { action: string; entityLabel: string; userName: string };
+
+// Every row (data and event) after the given id.
+export async function activityAfter(afterId: number): Promise<LogRow[]> {
+  const sql = connect();
+  try {
+    return await sql<LogRow[]>`
+      select action, entity_label as "entityLabel", user_name as "userName"
+      from activity_log where id > ${afterId} order by id`;
+  } finally {
+    await sql.end();
+  }
+}

@@ -12,16 +12,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import type { Role } from "@/lib/nav";
+import { ROLE_LABEL, type Role } from "@/lib/permissions";
 
 export type ShellUser = { name: string; role: Role };
 export type Tone = "light" | "navy";
-
-const ROLE_LABEL: Record<Role, string> = {
-  admin: "Admin",
-  manager: "Manager",
-  staff: "Staff",
-};
 
 function initials(name: string) {
   return name

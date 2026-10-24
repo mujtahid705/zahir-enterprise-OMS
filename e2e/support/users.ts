@@ -21,7 +21,7 @@ export const E2E_USERS = {
 } satisfies Record<string, TestUser>;
 
 export function projectUser(
-  kind: "logout" | "reset",
+  kind: "logout" | "reset" | "account",
   project: string,
 ): TestUser {
   return {
@@ -41,6 +41,7 @@ export function seedUserList(): SeedUser[] {
     ...PROJECTS.flatMap((p) => [
       projectUser("logout", p),
       projectUser("reset", p),
+      projectUser("account", p),
     ]),
   ];
   return users.map((user) => ({ ...user, password: e2ePassword() }));

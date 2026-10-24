@@ -7,7 +7,7 @@ import { requestPasswordReset } from "@/actions/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FormNotice } from "../auth-screen";
+import { FormNotice } from "@/components/form-notice";
 
 // Shown when /auth/confirm rejects a reset link.
 export function ExpiredLinkNotice() {

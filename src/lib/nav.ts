@@ -11,7 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-export type Role = "admin" | "manager" | "staff";
+import { PERMISSIONS, ROLES, type Role } from "@/lib/permissions";
 
 export type NavItem = {
   href: string;
@@ -20,23 +20,31 @@ export type NavItem = {
   roles: readonly Role[];
 };
 
-const ALL: readonly Role[] = ["admin", "manager", "staff"];
-
-// Sidebar order. Role access per SPEC §3 and §9.
+// Sidebar order. Role access comes from the permission matrix (SPEC §3, §9).
 export const NAV_ITEMS: readonly NavItem[] = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard, roles: ALL },
-  { href: "/orders", label: "Orders", icon: ClipboardList, roles: ALL },
-  { href: "/products", label: "Products", icon: Package, roles: ALL },
-  { href: "/customers", label: "Customers", icon: Store, roles: ALL },
-  { href: "/suppliers", label: "Suppliers", icon: Factory, roles: ALL },
+  { href: "/", label: "Dashboard", icon: LayoutDashboard, roles: ROLES },
+  { href: "/orders", label: "Orders", icon: ClipboardList, roles: ROLES },
+  { href: "/products", label: "Products", icon: Package, roles: ROLES },
+  { href: "/customers", label: "Customers", icon: Store, roles: ROLES },
+  { href: "/suppliers", label: "Suppliers", icon: Factory, roles: ROLES },
   {
     href: "/reports",
     label: "Reports",
     icon: ChartColumn,
-    roles: ["admin", "manager"],
+    roles: PERMISSIONS.viewReports,
   },
-  { href: "/activity", label: "Activity", icon: History, roles: ["admin"] },
-  { href: "/settings", label: "Settings", icon: Settings, roles: ["admin"] },
+  {
+    href: "/activity",
+    label: "Activity",
+    icon: History,
+    roles: PERMISSIONS.viewActivityLog,
+  },
+  {
+    href: "/settings",
+    label: "Settings",
+    icon: Settings,
+    roles: PERMISSIONS.manageUsers,
+  },
 ];
 
 // Reached from the user menu (desktop) and More (phone), not the sidebar.
@@ -44,7 +52,7 @@ export const ACCOUNT_ITEM: NavItem = {
   href: "/account",
   label: "Account",
   icon: UserRound,
-  roles: ALL,
+  roles: ROLES,
 };
 
 // Phone bottom bar: Dashboard · Orders · + New Order · Products · More.

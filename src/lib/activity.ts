@@ -23,23 +23,26 @@ export type ActivityEvent = {
   action: EventAction;
   // null for a failed login or the system.
   user: Actor | null;
+  // The record the event is about; defaults to the acting User's profile.
+  entity?: { type: string; id: string; label: string };
   details?: Record<string, unknown>;
 };
 
-// Auth events are recorded against the user's own profile. Pass the write's
-// transaction so the event commits or rolls back with it.
+// Pass the write's transaction so the event commits or rolls back with it.
 export async function logEvent(
-  { action, user, details }: ActivityEvent,
+  { action, user, details, entity }: ActivityEvent,
   executor: Db | Tx = db,
 ): Promise<void> {
+  const target =
+    entity ?? (user && { type: "profiles", id: user.id, label: user.name });
   await executor.insert(activityLog).values({
     kind: "event",
     action,
     userId: user?.id,
     userName: user?.name,
-    entityType: user ? "profiles" : undefined,
-    entityId: user?.id,
-    entityLabel: user?.name,
+    entityType: target?.type,
+    entityId: target?.id,
+    entityLabel: target?.label,
     details,
   });
 }

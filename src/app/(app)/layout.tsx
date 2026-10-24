@@ -1,26 +1,25 @@
 import { Suspense } from "react";
-import { BottomTabBar, MoreItems } from "@/components/shell/bottom-tab-bar";
-import { Sidebar } from "@/components/shell/sidebar";
+import {
+  BottomTabBar,
+  BottomTabBarFallback,
+} from "@/components/shell/bottom-tab-bar";
+import { Sidebar, SidebarFallback } from "@/components/shell/sidebar";
 import { getCurrentUser } from "@/lib/auth";
 
-// Role-dependent nav streams in behind Suspense and the rest of the shell
-// prerenders. The sidebar fallback shows Staff's items, which every role sees.
+// The nav depends on the User's role and the pathname, so it streams in
+// behind Suspense; its fallbacks and the rest of the shell prerender.
 export default function AppLayout({ children }: LayoutProps<"/">) {
   return (
     <div className="flex min-h-dvh">
-      <Suspense fallback={<Sidebar role="staff" />}>
+      <Suspense fallback={<SidebarFallback />}>
         <UserSidebar />
       </Suspense>
       <div className="flex min-w-0 flex-1 flex-col pb-[calc(64px+env(safe-area-inset-bottom))] md:pb-0">
         {children}
       </div>
-      <BottomTabBar
-        moreItems={
-          <Suspense fallback={<MoreItems role="staff" />}>
-            <UserMoreItems />
-          </Suspense>
-        }
-      />
+      <Suspense fallback={<BottomTabBarFallback />}>
+        <UserBottomTabBar />
+      </Suspense>
     </div>
   );
 }
@@ -30,7 +29,7 @@ async function UserSidebar() {
   return <Sidebar role={role} />;
 }
 
-async function UserMoreItems() {
+async function UserBottomTabBar() {
   const { role } = await getCurrentUser();
-  return <MoreItems role={role} />;
+  return <BottomTabBar role={role} />;
 }
