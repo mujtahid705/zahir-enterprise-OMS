@@ -10,3 +10,10 @@ export function formatMoney(amount: string | number): string {
   const value = Number(amount);
   return `${value < 0 ? "-" : ""}Tk ${TAKA.format(Math.abs(value))}`;
 }
+
+const PIECES = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
+
+// Quantities share the grouping (SPEC §8): "1,20,000 pcs".
+export function formatPieces(quantity: number): string {
+  return `${PIECES.format(quantity)} pcs`;
+}

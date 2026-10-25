@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatMoney } from "@/lib/money";
+import { formatMoney, formatPieces } from "@/lib/money";
 
 describe("formatMoney", () => {
   it("prints Tk with paisa", () => {
@@ -16,5 +16,13 @@ describe("formatMoney", () => {
 
   it("puts the sign before Tk", () => {
     expect(formatMoney("-1500.5")).toBe("-Tk 1,500.50");
+  });
+});
+
+describe("formatPieces", () => {
+  it("groups quantities in lakh too", () => {
+    expect(formatPieces(5000)).toBe("5,000 pcs");
+    expect(formatPieces(120000)).toBe("1,20,000 pcs");
+    expect(formatPieces(1)).toBe("1 pcs");
   });
 });
