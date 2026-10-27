@@ -143,3 +143,103 @@ test("changing the Customer asks first, then clears the items", async ({
   await expect(page.getByText("No items yet.")).toBeVisible();
   await expect(page.getByText(second)).toBeVisible();
 });
+
+test("an Admin adds a missing Product from the order form and gives the line its own price", async ({
+  page,
+}, testInfo) => {
+  const run = `${Date.now()}${Math.random().toString(36).slice(2, 6)} ${testInfo.project.name}`;
+  const customer = `Mitali Sweets ${run}`;
+  const supplier = `Rahim Plastics ${run}`;
+  const product = `Carry bag large ${run}`;
+  await addCustomer(page, customer);
+  await addSupplier(page, supplier);
+
+  await page.goto("/orders/new");
+  await page
+    .getByRole("searchbox", { name: "Search customers" })
+    .fill(customer);
+  await page.getByRole("button", { name: new RegExp(customer) }).click();
+  await page.getByRole("button", { name: "Add product" }).click();
+  const picker = page.getByRole("dialog", { name: "Add product" });
+  await expect(
+    picker.getByText("This customer has no active products."),
+  ).toBeVisible();
+  await picker
+    .getByRole("button", { name: "New product for this customer" })
+    .click();
+
+  const form = page.getByRole("dialog", { name: "New product" });
+  await expect(form.getByText(`For ${customer}.`)).toBeVisible();
+  const supplierPicker = form.getByRole("combobox", { name: "Supplier" });
+  const value = await supplierPicker
+    .locator("option", { hasText: supplier })
+    .getAttribute("value");
+  await supplierPicker.selectOption(value!);
+  await form.getByRole("textbox", { name: "Name", exact: true }).fill(product);
+  await form.getByRole("textbox", { name: /^Sell price/ }).fill("4.00");
+  await form.getByRole("textbox", { name: /^Buy price/ }).fill("3.00");
+  await form.getByRole("button", { name: "Add Product" }).click();
+
+  // Straight to quantity, with the new Product's prices to override.
+  const qty = page.getByRole("dialog", { name: product });
+  await qty.getByRole("button", { name: "2,000", exact: true }).click();
+  const sell = qty.getByRole("textbox", { name: "Sell price/pc (Tk)" });
+  await expect(sell).toHaveValue("4.00");
+  await sell.fill("3.755");
+  await expect(qty.getByRole("alert")).toHaveText(
+    "Use at most 2 decimal places.",
+  );
+  await expect(
+    qty.getByRole("button", { name: "Add to order" }),
+  ).toBeDisabled();
+  await sell.fill("3.75");
+  await expect(qty.getByText("Product price Tk 4.00")).toBeVisible();
+  await qty.getByRole("button", { name: "Add to order" }).click();
+  await expect(qty).toBeHidden();
+
+  await page.getByRole("button", { name: "Review", exact: true }).click();
+  await page.getByRole("button", { name: "Save order" }).click();
+  await expect(page).toHaveURL(/\/orders\/[0-9a-f-]{36}$/);
+  const totals = page.getByRole("definition");
+  await expect(totals.getByText("Tk 7,500.00", { exact: true })).toBeVisible();
+  await expect(totals.getByText("Tk 6,000.00", { exact: true })).toBeVisible();
+});
+
+test("Staff can't add a Product or change prices on the order form", async ({
+  page,
+  browser,
+}, testInfo) => {
+  const run = `${Date.now()}${Math.random().toString(36).slice(2, 6)} ${testInfo.project.name}`;
+  const customer = `Lucky Bakery ${run}`;
+  const supplier = `Suzinas ${run}`;
+  const product = `Cake box ${run}`;
+  const customerUrl = await addCustomer(page, customer);
+  await addSupplier(page, supplier);
+  await addProduct(page, customerUrl, {
+    name: product,
+    supplier,
+    sell: "5.00",
+    buy: "4.00",
+  });
+
+  const staff = await signInAs(browser, E2E_USERS.staff.email, e2ePassword());
+  await staff.goto("/orders/new");
+  await staff
+    .getByRole("searchbox", { name: "Search customers" })
+    .fill(customer);
+  await staff.getByRole("button", { name: new RegExp(customer) }).click();
+  await staff.getByRole("button", { name: "Add product" }).click();
+  const picker = staff.getByRole("dialog", { name: "Add product" });
+  await expect(
+    picker.getByText("Product missing? Ask a manager to add it."),
+  ).toBeVisible();
+  await expect(
+    picker.getByRole("button", { name: "New product for this customer" }),
+  ).toHaveCount(0);
+
+  await picker.getByRole("button", { name: new RegExp(product) }).click();
+  const qty = staff.getByRole("dialog", { name: product });
+  await expect(qty.getByText("Sell · Tk 5.00/pc")).toBeVisible();
+  await expect(qty.getByRole("textbox", { name: /price/ })).toHaveCount(0);
+  await staff.context().close();
+});

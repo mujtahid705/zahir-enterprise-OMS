@@ -135,6 +135,8 @@ async function create(
 ): Promise<{ id: string; orderNo: string }> {
   authorize(actor, "editOrders");
   const values = parse(orderSchema, input);
+  if (values.items.some((item) => item.sellPrice || item.buyPrice))
+    authorize(actor, "overridePrices");
   return withUser(
     actor,
     async (tx) => {
@@ -200,20 +202,38 @@ async function create(
         .returning({ id: workOrders.id, supplierId: workOrders.supplierId });
       const woFor = new Map(created.map((wo) => [wo.supplierId, wo.id]));
 
-      await tx.insert(orderItems).values(
-        lines.map(({ product, quantity, supplierId }, index) => ({
-          orderId: order!.id,
-          workOrderId: woFor.get(supplierId)!,
-          productId: product.id,
-          supplierId,
-          productName: product.name,
-          specText: specText(product),
-          quantity,
-          sellPrice: product.sellPrice,
-          buyPrice: product.buyPrice,
-          sortOrder: index,
-        })),
-      );
+      const items = await tx
+        .insert(orderItems)
+        .values(
+          lines.map(({ product, quantity, supplierId }, index) => ({
+            orderId: order!.id,
+            workOrderId: woFor.get(supplierId)!,
+            productId: product.id,
+            supplierId,
+            productName: product.name,
+            specText: specText(product),
+            quantity,
+            sellPrice: product.sellPrice,
+            buyPrice: product.buyPrice,
+            sortOrder: index,
+          })),
+        )
+        .returning({ id: orderItems.id, productId: orderItems.productId });
+      const itemFor = new Map(items.map((item) => [item.productId, item.id]));
+
+      // An override is written over the Product's copy, so the Activity Log
+      // shows it as a before → after change (SPEC §11.1).
+      for (const { product, sellPrice, buyPrice } of lines) {
+        const set = {
+          ...(sellPrice && sellPrice !== product.sellPrice && { sellPrice }),
+          ...(buyPrice && buyPrice !== product.buyPrice && { buyPrice }),
+        };
+        if (Object.keys(set).length)
+          await tx
+            .update(orderItems)
+            .set(set)
+            .where(eq(orderItems.id, itemFor.get(product.id)!));
+      }
       return order!;
     },
     executor,

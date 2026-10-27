@@ -1,11 +1,11 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import type { Tx } from "@/db/client";
 import { activityLog, profiles } from "@/db/schema";
 import { createUser as seedUser } from "@/db/test/fixtures";
 import { dbTest, inRollback } from "@/db/test/rollback";
 import type { CurrentUser } from "@/lib/auth";
-import { UserInputError } from "@/lib/errors";
+import { NotAllowedError, UserInputError } from "@/lib/errors";
 import { todayInDhaka } from "@/lib/dates";
 import type { Role } from "@/lib/permissions";
 import { orders } from "@/services/orders";
@@ -427,6 +427,70 @@ describe("create rules", () => {
       }
     },
   );
+});
+
+describe("price override", () => {
+  dbTest(
+    "lets a Manager set a line's own prices, logged as a change to the Product's",
+    async (tx) => {
+      const manager = await seedActor(tx, "manager");
+      const c = await seedCatalogue(tx);
+
+      const { id } = await orders.create(
+        manager,
+        {
+          ...bagOrder(c),
+          items: [
+            { productId: c.carryBag.id, quantity: 500, sellPrice: "3.75" },
+            { productId: c.bread.id, quantity: 100 },
+          ],
+        },
+        { executor: tx },
+      );
+
+      const order = await orders.get(manager, id, { executor: tx });
+      expect(order?.items).toMatchObject([
+        { sellPrice: "3.75", buyPrice: "3.00", sellTotal: "1875.00" },
+        { sellPrice: "2.50", buyPrice: "2.00" },
+      ]);
+      const updates = await tx
+        .select({
+          entityId: activityLog.entityId,
+          changes: activityLog.changes,
+        })
+        .from(activityLog)
+        .where(
+          and(eq(activityLog.orderId, id), eq(activityLog.action, "update")),
+        );
+      expect(updates).toEqual([
+        {
+          entityId: order!.items[0]!.id,
+          changes: {
+            sell_price: { from: 4, to: 3.75 },
+            sell_total: { from: 2000, to: 1875 },
+          },
+        },
+      ]);
+    },
+  );
+
+  dbTest("refuses Staff a price of their own", async (tx) => {
+    const staff = await seedActor(tx, "staff");
+    const c = await seedCatalogue(tx);
+
+    await expect(
+      orders.create(
+        staff,
+        {
+          ...bagOrder(c),
+          items: [
+            { productId: c.carryBag.id, quantity: 500, buyPrice: "2.50" },
+          ],
+        },
+        { executor: tx },
+      ),
+    ).rejects.toThrow(NotAllowedError);
+  });
 });
 
 describe("options", () => {

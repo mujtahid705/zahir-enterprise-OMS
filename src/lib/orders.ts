@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { optional } from "@/lib/fields";
+import { priceSchema } from "@/lib/products";
 
 // Orders (SPEC §5): pure rules shared by the order form and the service.
 
@@ -83,8 +84,9 @@ const optionalDate = z
   .optional()
   .transform((value) => value || null);
 
-// What the order form saves. Prices, names and Suppliers are not sent: the
-// service copies them from each Product (SPEC §5.3).
+// What the order form saves. Names and Suppliers are not sent: the service
+// copies them from each Product (SPEC §5.3), prices too unless a line
+// overrides them (Admin/Manager only).
 export const orderSchema = z.object({
   customerId: z.uuid("Pick a Customer."),
   orderDate: z.iso.date("Enter the order date."),
@@ -95,7 +97,14 @@ export const orderSchema = z.object({
   notes: optional,
   invoiceNote: optional,
   items: z
-    .array(z.object({ productId: z.uuid(), quantity: quantitySchema }))
+    .array(
+      z.object({
+        productId: z.uuid(),
+        quantity: quantitySchema,
+        sellPrice: priceSchema.optional(),
+        buyPrice: priceSchema.optional(),
+      }),
+    )
     .min(1, "Add at least one product.")
     .refine(
       (items) =>

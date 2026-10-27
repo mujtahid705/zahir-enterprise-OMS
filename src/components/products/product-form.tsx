@@ -27,7 +27,7 @@ import {
   type ProductInput,
 } from "@/lib/products";
 
-type Option = { id: string; code: string; name: string };
+export type Option = { id: string; code: string; name: string };
 type Values = Partial<Record<keyof ProductInput, string | null>>;
 
 // Create or edit a Product (SPEC §4.3). A new Product picks its Customer,
@@ -70,6 +70,28 @@ export function ProductForm({
       ) : (
         <Picker label="Customer" options={customers} {...field("customerId")} />
       )}
+      <Specs values={values} suppliers={suppliers} />
+      <Button type="submit" disabled={pending} className="self-start">
+        {pending ? "Saving…" : id ? "Save changes" : "Add Product"}
+      </Button>
+    </ValidatedForm>
+  );
+}
+
+// Supplier, specs and prices: everything but the Customer.
+export function Specs({
+  values,
+  suppliers,
+}: {
+  values?: Values;
+  suppliers: Option[];
+}) {
+  const field = (name: keyof ProductInput) => ({
+    name,
+    defaultValue: values?.[name] ?? "",
+  });
+  return (
+    <>
       <Picker label="Supplier" options={suppliers} {...field("supplierId")} />
       <Field label="Name" required {...field("name")} />
       <div className="grid gap-5 sm:grid-cols-3">
@@ -80,10 +102,7 @@ export function ProductForm({
       <Field label="Print details" multiline {...field("printDetails")} />
       <Field label="Description" multiline {...field("description")} />
       <Prices values={values} />
-      <Button type="submit" disabled={pending} className="self-start">
-        {pending ? "Saving…" : id ? "Save changes" : "Add Product"}
-      </Button>
-    </ValidatedForm>
+    </>
   );
 }
 
@@ -118,7 +137,7 @@ export function DuplicateForm({
   );
 }
 
-function ValidatedForm({
+export function ValidatedForm({
   action,
   schema,
   state,
