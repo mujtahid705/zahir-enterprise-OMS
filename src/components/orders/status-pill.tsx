@@ -1,7 +1,5 @@
+import type { OrderStatus } from "@/lib/orders";
 import { cn } from "@/lib/utils";
-import type { OrderView } from "@/services/orders";
-
-type OrderStatus = OrderView["status"];
 
 // SPEC §6.1 labels.
 export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
@@ -40,6 +38,24 @@ export function StatusPill({
     >
       <span aria-hidden className="size-1.5 rounded-full bg-current" />
       {ORDER_STATUS_LABEL[status]}
+    </span>
+  );
+}
+
+// DESIGN.md §1: the WO x/y progress badge, in the Created pill style.
+export function WoProgressBadge({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center rounded-full bg-(--status-created-bg) px-2.5 py-0.5 text-xs font-medium whitespace-nowrap text-(--status-created-fg) num">
+      {label}
+    </span>
+  );
+}
+
+// DESIGN.md §1: amber outline badge.
+export function NeedsResendBadge() {
+  return (
+    <span className="inline-flex items-center rounded-full border border-warning px-2.5 py-0.5 text-xs font-medium whitespace-nowrap text-warning">
+      Needs re-send
     </span>
   );
 }

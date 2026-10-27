@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   lineTotal,
+  orderListFilters,
+  orderListHref,
   orderTotals,
   specText,
   splitWorkOrders,
+  woProgress,
 } from "@/lib/orders";
 
 describe("splitWorkOrders", () => {
@@ -70,5 +73,70 @@ describe("specText", () => {
     expect(
       specText({ size: null, thickness: null, colour: null, printDetails: "" }),
     ).toBe("");
+  });
+});
+
+describe("orderListFilters", () => {
+  const customer = "6f1d2b8e-3c4a-4e5f-9a7b-1c2d3e4f5a6b";
+
+  it("reads the filters a dashboard tile or the filter form put in the URL", () => {
+    expect(
+      orderListFilters({
+        q: " PO-77 ",
+        status: "wo_sent",
+        customer,
+        from: "2026-10-01",
+        to: "2026-10-31",
+        page: "3",
+      }),
+    ).toEqual({
+      query: "PO-77",
+      status: "wo_sent",
+      customerId: customer,
+      from: "2026-10-01",
+      to: "2026-10-31",
+      page: 3,
+    });
+  });
+
+  it("drops what it can't read, and starts on page 1", () => {
+    expect(
+      orderListFilters({
+        status: "lost",
+        customer: "C-0001",
+        supplier: ["a", "b"],
+        from: "1 Oct",
+        to: "",
+        page: "-2",
+      }),
+    ).toEqual({ query: "", page: 1 });
+  });
+
+  it("round-trips through orderListHref", () => {
+    const filters = {
+      query: "highway",
+      status: "delivered" as const,
+      supplierId: customer,
+      to: "2026-10-31",
+      page: 2,
+    };
+    const href = orderListHref(filters);
+    const params = Object.fromEntries(
+      new URL(href, "https://ze.test").searchParams,
+    );
+    expect(orderListFilters(params)).toEqual(filters);
+  });
+
+  it("links to the first page with no filters as plain /orders", () => {
+    expect(orderListHref({ query: "", page: 1 })).toBe("/orders");
+  });
+});
+
+describe("woProgress", () => {
+  it("shows WO x/y only while some but not all Work Orders are sent", () => {
+    expect(woProgress({ sent: 1, total: 2 })).toBe("WO 1/2");
+    expect(woProgress({ sent: 2, total: 3 })).toBe("WO 2/3");
+    expect(woProgress({ sent: 0, total: 2 })).toBeNull();
+    expect(woProgress({ sent: 2, total: 2 })).toBeNull();
   });
 });
