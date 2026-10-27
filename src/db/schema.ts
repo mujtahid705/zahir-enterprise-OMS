@@ -2,7 +2,9 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  char,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -11,6 +13,7 @@ import {
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -145,6 +148,151 @@ export const codeSequences = pgTable("code_sequences", {
   prefix: text("prefix").primaryKey(),
   lastValue: integer("last_value").notNull(),
 }).enableRLS();
+
+// Order numbers (ORD-2026-0012), one counter per year (SPEC §7). Not logged:
+// the Order that takes the number is.
+export const numberSequences = pgTable("number_sequences", {
+  year: integer("year").primaryKey(),
+  lastValue: integer("last_value").notNull(),
+}).enableRLS();
+
+// SPEC §5.1, §14. Customer details are copied on so old documents never
+// change; updated_at is the optimistic-lock token (SPEC §5.5). Never deleted,
+// so nothing cascades from here.
+export const orders = pgTable(
+  "orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    year: integer("year").notNull(),
+    seq: integer("seq").notNull(),
+    orderNo: text("order_no").notNull().unique(),
+    challanNo: text("challan_no").notNull().unique(),
+    invoiceNo: text("invoice_no").notNull().unique(),
+    customerId: uuid("customer_id")
+      .notNull()
+      .references(() => customers.id),
+    customerName: text("customer_name").notNull(),
+    customerPhone: text("customer_phone").notNull(),
+    customerAddress: text("customer_address").notNull(),
+    deliveryAddress: text("delivery_address").notNull(),
+    orderDate: date("order_date").notNull(),
+    deliveryDate: date("delivery_date"),
+    customerRef: text("customer_ref"),
+    notes: text("notes"),
+    invoiceNote: text("invoice_note"),
+    status: orderStatus("status").notNull().default("created"),
+    statusBeforeCancel: orderStatus("status_before_cancel"),
+    cancelReason: text("cancel_reason"),
+    isLocked: boolean("is_locked").notNull().default(false),
+    challanDate: date("challan_date"),
+    invoiceDate: date("invoice_date"),
+    challanDownloadedAt: timestamp("challan_downloaded_at", {
+      withTimezone: true,
+    }),
+    invoiceDownloadedAt: timestamp("invoice_downloaded_at", {
+      withTimezone: true,
+    }),
+    challanNeedsResend: boolean("challan_needs_resend")
+      .notNull()
+      .default(false),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    createdBy: uuid("created_by").references(() => profiles.id),
+    updatedBy: uuid("updated_by").references(() => profiles.id),
+    ...timestamps,
+  },
+  (t) => [
+    unique("orders_year_seq_unique").on(t.year, t.seq),
+    index("orders_status_idx").on(t.status),
+    index("orders_customer_id_idx").on(t.customerId),
+    index("orders_order_date_idx").on(t.orderDate),
+  ],
+).enableRLS();
+
+// One per Supplier per Order (SPEC §5.4, §6.2), Supplier details copied on.
+// A cancelled WO keeps its letter, and a new one for the same Supplier may
+// follow it.
+export const workOrders = pgTable(
+  "work_orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id),
+    letter: char("letter", { length: 1 }).notNull(),
+    woNo: text("wo_no").notNull().unique(),
+    supplierName: text("supplier_name").notNull(),
+    supplierPhone: text("supplier_phone").notNull(),
+    supplierAddress: text("supplier_address").notNull(),
+    status: woStatus("status").notNull().default("pending"),
+    needsResend: boolean("needs_resend").notNull().default(false),
+    woDate: date("wo_date"),
+    note: text("note"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelAcknowledgedAt: timestamp("cancel_acknowledged_at", {
+      withTimezone: true,
+    }),
+    cancelAcknowledgedBy: uuid("cancel_acknowledged_by").references(
+      () => profiles.id,
+    ),
+    ...timestamps,
+  },
+  (t) => [
+    unique("work_orders_order_id_letter_unique").on(t.orderId, t.letter),
+    uniqueIndex("work_orders_order_id_supplier_id_open_unique")
+      .on(t.orderId, t.supplierId)
+      .where(sql`${t.status} <> 'cancelled'`),
+    index("work_orders_order_id_idx").on(t.orderId),
+  ],
+).enableRLS();
+
+// One line of an Order (SPEC §5.3): its Supplier, name, spec and prices are
+// copied from the Product when added, so later Product changes never reach it.
+export const orderItems = pgTable(
+  "order_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id),
+    workOrderId: uuid("work_order_id")
+      .notNull()
+      .references(() => workOrders.id),
+    productId: uuid("product_id")
+      .notNull()
+      .references(() => products.id),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id),
+    productName: text("product_name").notNull(),
+    specText: text("spec_text").notNull(),
+    quantity: integer("quantity").notNull(),
+    sellPrice: numeric("sell_price", { precision: 12, scale: 2 }).notNull(),
+    buyPrice: numeric("buy_price", { precision: 12, scale: 2 }).notNull(),
+    sellTotal: numeric("sell_total", {
+      precision: 14,
+      scale: 2,
+    }).generatedAlwaysAs(sql`quantity * sell_price`),
+    buyTotal: numeric("buy_total", {
+      precision: 14,
+      scale: 2,
+    }).generatedAlwaysAs(sql`quantity * buy_price`),
+    sortOrder: integer("sort_order").notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    unique("order_items_order_id_product_id_unique").on(t.orderId, t.productId),
+    index("order_items_order_id_idx").on(t.orderId),
+    index("order_items_supplier_id_idx").on(t.supplierId),
+    check("order_items_quantity_positive", sql`${t.quantity} > 0`),
+    check("order_items_sell_price_positive", sql`${t.sellPrice} > 0`),
+    check("order_items_buy_price_positive", sql`${t.buyPrice} > 0`),
+  ],
+).enableRLS();
 
 // Append-only (SPEC §11.3, ADR 0001). Data rows come from log_row_change();
 // event rows are written by the app.
