@@ -32,6 +32,11 @@ export function lineTotal(price: string, quantity: number): string {
   return taka(paisa(price) * quantity);
 }
 
+// Sum of money amounts, worked in paisa.
+export function sumAmounts(amounts: readonly string[]): string {
+  return taka(amounts.reduce((sum, amount) => sum + paisa(amount), 0));
+}
+
 export type OrderTotals = {
   sell: string;
   buy: string;

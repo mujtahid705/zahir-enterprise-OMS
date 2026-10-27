@@ -129,6 +129,12 @@ export async function replaceCompanyImage(
   }
 }
 
+// The settings as every document prints them (SPEC §8, §12), for any role:
+// the documents are for everyone, the settings screen is Admin only.
+export async function getLetterheadSettings({ executor = db }: Deps = {}) {
+  return executor.query.companySettings.findFirst();
+}
+
 // The uploaded image, or null while the default (or none) applies.
 export async function readCompanyImage(
   actor: CurrentUser,
