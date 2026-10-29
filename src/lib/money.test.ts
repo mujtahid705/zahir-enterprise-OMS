@@ -17,6 +17,11 @@ describe("formatMoney", () => {
   it("puts the sign before Tk", () => {
     expect(formatMoney("-1500.5")).toBe("-Tk 1,500.50");
   });
+
+  it("rounds to whole taka when asked", () => {
+    expect(formatMoney("784350.40", { whole: true })).toBe("Tk 7,84,350");
+    expect(formatMoney("-1500.5", { whole: true })).toBe("-Tk 1,501");
+  });
 });
 
 describe("formatPieces", () => {
