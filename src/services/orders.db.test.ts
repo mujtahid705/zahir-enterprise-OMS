@@ -1,14 +1,20 @@
-import { eq } from "drizzle-orm";
+import { and, eq, type SQL } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import type { Tx } from "@/db/client";
-import { activityLog, profiles } from "@/db/schema";
+import {
+  activityLog,
+  orders as ordersTable,
+  profiles,
+  workOrders,
+} from "@/db/schema";
 import { createUser as seedUser } from "@/db/test/fixtures";
+import { withUser } from "@/db/with-user";
 import { dbTest, inRollback } from "@/db/test/rollback";
 import type { CurrentUser } from "@/lib/auth";
-import { UserInputError } from "@/lib/errors";
+import { NotAllowedError, UserInputError } from "@/lib/errors";
 import { todayInDhaka } from "@/lib/dates";
 import type { Role } from "@/lib/permissions";
-import { orders } from "@/services/orders";
+import { orders, type OrderFilters } from "@/services/orders";
 import { customers, suppliers } from "@/services/parties";
 import { products } from "@/services/products";
 
@@ -429,6 +435,70 @@ describe("create rules", () => {
   );
 });
 
+describe("price override", () => {
+  dbTest(
+    "lets a Manager set a line's own prices, logged as a change to the Product's",
+    async (tx) => {
+      const manager = await seedActor(tx, "manager");
+      const c = await seedCatalogue(tx);
+
+      const { id } = await orders.create(
+        manager,
+        {
+          ...bagOrder(c),
+          items: [
+            { productId: c.carryBag.id, quantity: 500, sellPrice: "3.75" },
+            { productId: c.bread.id, quantity: 100 },
+          ],
+        },
+        { executor: tx },
+      );
+
+      const order = await orders.get(manager, id, { executor: tx });
+      expect(order?.items).toMatchObject([
+        { sellPrice: "3.75", buyPrice: "3.00", sellTotal: "1875.00" },
+        { sellPrice: "2.50", buyPrice: "2.00" },
+      ]);
+      const updates = await tx
+        .select({
+          entityId: activityLog.entityId,
+          changes: activityLog.changes,
+        })
+        .from(activityLog)
+        .where(
+          and(eq(activityLog.orderId, id), eq(activityLog.action, "update")),
+        );
+      expect(updates).toEqual([
+        {
+          entityId: order!.items[0]!.id,
+          changes: {
+            sell_price: { from: 4, to: 3.75 },
+            sell_total: { from: 2000, to: 1875 },
+          },
+        },
+      ]);
+    },
+  );
+
+  dbTest("refuses Staff a price of their own", async (tx) => {
+    const staff = await seedActor(tx, "staff");
+    const c = await seedCatalogue(tx);
+
+    await expect(
+      orders.create(
+        staff,
+        {
+          ...bagOrder(c),
+          items: [
+            { productId: c.carryBag.id, quantity: 500, buyPrice: "2.50" },
+          ],
+        },
+        { executor: tx },
+      ),
+    ).rejects.toThrow(NotAllowedError);
+  });
+});
+
 describe("options", () => {
   dbTest(
     "offers only the Customer's active Products with an active Supplier",
@@ -452,6 +522,193 @@ describe("options", () => {
           buyPrice: "2.00",
           supplier: { id: c.suzinas.id, name: "Suzinas" },
         },
+      ]);
+    },
+  );
+});
+
+describe("list", () => {
+  dbTest(
+    "shows each Order's number, Customer, date, status and Sell total, newest first",
+    async (tx) => {
+      const admin = await seedActor(tx, "admin");
+      const staff = await seedActor(tx, "staff");
+      const c = await seedCatalogue(tx);
+      const first = await orders.create(staff, bagOrder(c), { executor: tx });
+      const second = await orders.create(
+        staff,
+        {
+          ...bagOrder(c),
+          orderDate: "2026-10-21",
+          items: [{ productId: c.bread.id, quantity: 1000 }],
+        },
+        { executor: tx },
+      );
+      const list = (actor: CurrentUser) =>
+        orders.list(
+          actor,
+          { customerId: c.highwaySweets.id },
+          { executor: tx },
+        );
+
+      expect(await list(admin)).toEqual({
+        total: 2,
+        rows: [
+          {
+            id: second.id,
+            orderNo: second.orderNo,
+            customerId: c.highwaySweets.id,
+            customerName: "Highway Sweets",
+            customerRef: null,
+            orderDate: "2026-10-21",
+            status: "created",
+            workOrders: { sent: 0, total: 1 },
+            needsResend: false,
+            sellTotal: "2500.00",
+            margin: { amount: "500.00", percent: 20 },
+          },
+          expect.objectContaining({
+            id: first.id,
+            sellTotal: "2000.00",
+            margin: { amount: "500.00", percent: 25 },
+          }),
+        ],
+      });
+      const { rows } = await list(staff);
+      expect(rows.map((row) => row.margin)).toEqual([null, null]);
+    },
+  );
+
+  dbTest(
+    "searches order number, Customer and Customer reference",
+    async (tx) => {
+      const staff = await seedActor(tx, "staff");
+      const c = await seedCatalogue(tx);
+      const plain = await orders.create(staff, bagOrder(c), { executor: tx });
+      const withRef = await orders.create(
+        staff,
+        { ...bagOrder(c), customerRef: "PO-77/B" },
+        { executor: tx },
+      );
+      const found = async (query: string) =>
+        (
+          await orders.list(
+            staff,
+            { query, customerId: c.highwaySweets.id },
+            { executor: tx },
+          )
+        ).rows.map((row) => row.id);
+
+      expect(await found(plain.orderNo.toLowerCase())).toEqual([plain.id]);
+      expect(await found("po-77")).toEqual([withRef.id]);
+      expect(await found("highway")).toEqual([withRef.id, plain.id]);
+      expect(await found("nothing like it")).toEqual([]);
+    },
+  );
+
+  dbTest("filters by status, Supplier and order date range", async (tx) => {
+    const staff = await seedActor(tx, "staff");
+    const c = await seedCatalogue(tx);
+    const create = (orderDate: string, productId: string) =>
+      orders.create(
+        staff,
+        {
+          ...bagOrder(c),
+          orderDate,
+          items: [{ productId, quantity: 100 }],
+        },
+        { executor: tx },
+      );
+    const bags = await create("2026-09-30", c.carryBag.id);
+    const bread = await create("2026-10-01", c.bread.id);
+    const boxes = await create("2026-10-31", c.sweetBox.id);
+    await withUser(
+      staff,
+      (sp) =>
+        sp
+          .update(ordersTable)
+          .set({ status: "delivered" })
+          .where(eq(ordersTable.id, bread.id)),
+      tx,
+    );
+    const found = async (filters: OrderFilters) =>
+      (
+        await orders.list(
+          staff,
+          { ...filters, customerId: c.highwaySweets.id },
+          { executor: tx },
+        )
+      ).rows.map((row) => row.id);
+
+    expect(await found({ status: "delivered" })).toEqual([bread.id]);
+    expect(await found({ supplierId: c.suzinas.id })).toEqual([
+      boxes.id,
+      bread.id,
+    ]);
+    expect(await found({ supplierId: c.rahim.id })).toEqual([bags.id]);
+    expect(await found({ from: "2026-10-01", to: "2026-10-31" })).toEqual([
+      boxes.id,
+      bread.id,
+    ]);
+    expect(await found({ to: "2026-09-30" })).toEqual([bags.id]);
+  });
+
+  dbTest(
+    "counts sent Work Orders, leaving out cancelled ones, and flags Needs re-send",
+    async (tx) => {
+      const staff = await seedActor(tx, "staff");
+      const c = await seedCatalogue(tx);
+      const twoSuppliers = {
+        ...bagOrder(c),
+        items: [
+          { productId: c.bread.id, quantity: 100 },
+          { productId: c.carryBag.id, quantity: 100 },
+        ],
+      };
+      const woChanged = await orders.create(staff, twoSuppliers, {
+        executor: tx,
+      });
+      const challanChanged = await orders.create(staff, bagOrder(c), {
+        executor: tx,
+      });
+      const oneCancelled = await orders.create(staff, twoSuppliers, {
+        executor: tx,
+      });
+      const set = (
+        table: typeof workOrders | typeof ordersTable,
+        values: Record<string, unknown>,
+        where: SQL,
+      ) =>
+        withUser(staff, (sp) => sp.update(table).set(values).where(where), tx);
+      const wo = (orderId: string, letter: string) =>
+        and(eq(workOrders.orderId, orderId), eq(workOrders.letter, letter))!;
+      await set(
+        workOrders,
+        { status: "sent", needsResend: true },
+        wo(woChanged.id, "A"),
+      );
+      await set(
+        ordersTable,
+        { challanNeedsResend: true },
+        eq(ordersTable.id, challanChanged.id),
+      );
+      await set(workOrders, { status: "sent" }, wo(oneCancelled.id, "A"));
+      await set(workOrders, { status: "cancelled" }, wo(oneCancelled.id, "B"));
+
+      const { rows } = await orders.list(
+        staff,
+        { customerId: c.highwaySweets.id },
+        { executor: tx },
+      );
+      expect(
+        rows.map(({ workOrders, needsResend }) => ({
+          workOrders,
+          needsResend,
+        })),
+      ).toEqual([
+        { workOrders: { sent: 1, total: 1 }, needsResend: false },
+        { workOrders: { sent: 0, total: 1 }, needsResend: true },
+        { workOrders: { sent: 1, total: 2 }, needsResend: true },
       ]);
     },
   );

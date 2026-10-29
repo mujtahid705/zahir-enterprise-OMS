@@ -6,6 +6,7 @@ import { requireRole } from "@/lib/auth";
 import { todayInDhaka } from "@/lib/dates";
 import { PERMISSIONS, can } from "@/lib/permissions";
 import { orders } from "@/services/orders";
+import { suppliers } from "@/services/parties";
 
 export const metadata: Metadata = { title: "New Order" };
 
@@ -24,12 +25,18 @@ export default function Page() {
 
 async function NewOrder() {
   const actor = await requireRole(...PERMISSIONS.editOrders);
-  const customers = await orders.customerOptions(actor);
+  const addsProducts = can(actor.role, "addProductInline");
+  const [customers, supplierOptions] = await Promise.all([
+    orders.customerOptions(actor),
+    addsProducts ? suppliers.options(actor) : null,
+  ]);
   return (
     <OrderSteps
       customers={customers}
       today={todayInDhaka()}
       seesMargin={can(actor.role, "seeMargin")}
+      overridesPrices={can(actor.role, "overridePrices")}
+      suppliers={supplierOptions}
     />
   );
 }

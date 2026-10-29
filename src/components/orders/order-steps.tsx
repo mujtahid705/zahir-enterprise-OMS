@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { createOrderAction, orderProductsAction } from "@/actions/orders";
 import { FormNotice } from "@/components/form-notice";
+import { OrderProductForm } from "@/components/orders/order-product-form";
+import type { Option as SupplierOption } from "@/components/products/product-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,14 +28,28 @@ import { Textarea } from "@/components/ui/textarea";
 import type { FormState } from "@/lib/form-state";
 import { formatMoney, formatPieces } from "@/lib/money";
 import { lineTotal, orderTotals, splitWorkOrders } from "@/lib/orders";
+import { priceSchema } from "@/lib/products";
 import { cn } from "@/lib/utils";
 import type { CustomerOption, ProductOption } from "@/services/orders";
 
 // The order form, "Steps" (DESIGN.md §7a, SPEC §5.2): Customer → Items →
 // Review, one decision per screen. Prices shown here are the Products'
-// current ones; the service copies them again when it saves.
+// current ones; the service copies them again when it saves, except prices
+// an Admin/Manager changed on the line.
 
-type Line = ProductOption & { quantity: number; supplierId: string };
+type Prices = Pick<ProductOption, "sellPrice" | "buyPrice">;
+
+// sellPrice/buyPrice are the line's own; `listed` keeps the Product's, so
+// only a changed price is sent as an override.
+type Line = ProductOption & {
+  quantity: number;
+  supplierId: string;
+  listed: Prices;
+};
+
+// The product picker and the New product form: 85% height (DESIGN §7a).
+const TALL_SHEET =
+  "h-[85dvh] gap-3 rounded-t-xl pb-[calc(env(safe-area-inset-bottom)+16px)] sm:mx-auto sm:max-w-lg";
 
 type Details = {
   orderDate: string;
@@ -50,6 +66,7 @@ const lineFrom = (product: ProductOption): Line => ({
   ...product,
   supplierId: product.supplier.id,
   quantity: 0,
+  listed: { sellPrice: product.sellPrice, buyPrice: product.buyPrice },
 });
 
 function totalsOf(lines: readonly Line[]) {
@@ -68,10 +85,15 @@ export function OrderSteps({
   customers,
   today,
   seesMargin,
+  overridesPrices,
+  suppliers,
 }: {
   customers: CustomerOption[];
   today: string;
   seesMargin: boolean;
+  overridesPrices: boolean;
+  // Active Suppliers for "+ New product"; null for roles that can't add one.
+  suppliers: SupplierOption[] | null;
 }) {
   const [step, setStep] = useState(0);
   const [customer, setCustomer] = useState<CustomerOption | null>(null);
@@ -89,6 +111,7 @@ export function OrderSteps({
     invoiceNote: "",
   });
   const [picking, setPicking] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Line | null>(null);
   const [switchTo, setSwitchTo] = useState<CustomerOption | null>(null);
   const [state, setState] = useState<FormState>();
@@ -135,6 +158,12 @@ export function OrderSteps({
           items: lines.map((line) => ({
             productId: line.id,
             quantity: line.quantity,
+            ...(line.sellPrice !== line.listed.sellPrice && {
+              sellPrice: line.sellPrice,
+            }),
+            ...(line.buyPrice !== line.listed.buyPrice && {
+              buyPrice: line.buyPrice,
+            }),
           })),
         }),
       );
@@ -321,12 +350,42 @@ export function OrderSteps({
             setPicking(false);
             setEditing(lineFrom(product));
           }}
+          onNew={
+            suppliers &&
+            (() => {
+              setPicking(false);
+              setCreating(true);
+            })
+          }
         />
+      )}
+
+      {customer && suppliers && (
+        <Sheet open={creating} onOpenChange={setCreating}>
+          <SheetContent side="bottom" className={TALL_SHEET}>
+            <SheetHeader className="pb-0">
+              <SheetTitle className="text-lg text-navy">New product</SheetTitle>
+              <SheetDescription>For {customer.name}.</SheetDescription>
+            </SheetHeader>
+            <div className="flex-1 overflow-y-auto px-4">
+              <OrderProductForm
+                customerId={customer.id}
+                suppliers={suppliers}
+                onCreated={({ product, products }) => {
+                  setCatalogue({ customerId: customer.id, products });
+                  setCreating(false);
+                  setEditing(lineFrom(product));
+                }}
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
       )}
 
       <QuantitySheet
         line={editing}
         seesMargin={seesMargin}
+        overridesPrices={overridesPrices}
         isNew={!!editing && !lines.some((line) => line.id === editing.id)}
         onClose={() => setEditing(null)}
         onSave={(line) => {
@@ -534,6 +593,7 @@ function ProductPicker({
   loading,
   taken,
   onPick,
+  onNew,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -541,6 +601,8 @@ function ProductPicker({
   loading: boolean;
   taken: Set<string>;
   onPick: (product: ProductOption) => void;
+  // Admin/Manager only; Staff get a hint instead.
+  onNew: (() => void) | null;
 }) {
   const [query, setQuery] = useState("");
   const list = (products ?? []).filter((p) =>
@@ -548,10 +610,7 @@ function ProductPicker({
   );
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="h-[85dvh] gap-3 rounded-t-xl pb-[calc(env(safe-area-inset-bottom)+16px)] sm:mx-auto sm:max-w-lg"
-      >
+      <SheetContent side="bottom" className={TALL_SHEET}>
         <SheetHeader className="pb-0">
           <SheetTitle className="text-lg text-navy">Add product</SheetTitle>
           <SheetDescription>
@@ -603,6 +662,17 @@ function ProductPicker({
             </li>
           )}
         </ul>
+        <div className="border-t border-border px-4 pt-3">
+          {onNew ? (
+            <Button variant="secondary" className="w-full" onClick={onNew}>
+              <Plus strokeWidth={1.5} /> New product for this customer
+            </Button>
+          ) : (
+            <p className="text-center text-sm text-ink-muted">
+              Product missing? Ask a manager to add it.
+            </p>
+          )}
+        </div>
       </SheetContent>
     </Sheet>
   );
@@ -619,6 +689,7 @@ const parseQuantity = (raw: string) => {
 function QuantitySheet({
   line,
   seesMargin,
+  overridesPrices,
   isNew,
   onClose,
   onSave,
@@ -626,19 +697,34 @@ function QuantitySheet({
 }: {
   line: Line | null;
   seesMargin: boolean;
+  overridesPrices: boolean;
   isNew: boolean;
   onClose: () => void;
   onSave: (line: Line) => void;
   onRemove: (line: Line) => void;
 }) {
   const [quantity, setQuantity] = useState(0);
+  const [typed, setTyped] = useState<Prices>({ sellPrice: "", buyPrice: "" });
   const [forId, setForId] = useState<string | null>(null);
-  // Starts from the line's quantity each time a line opens.
+  // Starts from the line's quantity and prices each time a line opens.
   if (line && line.id !== forId) {
     setForId(line.id);
     setQuantity(line.quantity);
+    setTyped({ sellPrice: line.sellPrice, buyPrice: line.buyPrice });
   }
   if (!line && forId) setForId(null);
+
+  // Admin/Manager may change the line's prices (SPEC §5.3); a price that
+  // doesn't parse keeps the line's and blocks saving.
+  const sell = priceSchema.safeParse(typed.sellPrice);
+  const buy = priceSchema.safeParse(typed.buyPrice);
+  const priceError = (sell.error ?? buy.error)?.issues[0]?.message;
+  const priced = line && {
+    ...line,
+    quantity,
+    sellPrice: sell.data ?? line.sellPrice,
+    buyPrice: buy.data ?? line.buyPrice,
+  };
 
   return (
     <Sheet open={!!line} onOpenChange={(open) => !open && onClose()}>
@@ -651,7 +737,7 @@ function QuantitySheet({
             className="flex flex-col gap-4"
             onSubmit={(e) => {
               e.preventDefault();
-              if (quantity > 0) onSave({ ...line, quantity });
+              if (quantity > 0 && !priceError) onSave(priced!);
             }}
           >
             <SheetHeader className="pb-0">
@@ -693,22 +779,45 @@ function QuantitySheet({
                   </button>
                 ))}
               </div>
+              {overridesPrices && (
+                <div className="grid grid-cols-2 gap-3">
+                  <PriceInput
+                    label="Sell price/pc (Tk)"
+                    name="sellPrice"
+                    value={typed.sellPrice}
+                    listed={line.listed.sellPrice}
+                    onChange={(sellPrice) => setTyped({ ...typed, sellPrice })}
+                  />
+                  <PriceInput
+                    label="Buy price/pc (Tk)"
+                    name="buyPrice"
+                    value={typed.buyPrice}
+                    listed={line.listed.buyPrice}
+                    onChange={(buyPrice) => setTyped({ ...typed, buyPrice })}
+                  />
+                </div>
+              )}
               <dl className="mt-1 flex flex-col gap-1 text-sm">
-                <Row term={`Sell · ${formatMoney(line.sellPrice)}/pc`}>
+                <Row term={`Sell · ${formatMoney(priced!.sellPrice)}/pc`}>
                   <span className="font-medium">
-                    {formatMoney(lineTotal(line.sellPrice, quantity))}
+                    {formatMoney(lineTotal(priced!.sellPrice, quantity))}
                   </span>
                 </Row>
                 {seesMargin && (
-                  <Row term={`Buy · ${formatMoney(line.buyPrice)}/pc`}>
-                    {formatMoney(lineTotal(line.buyPrice, quantity))}{" "}
+                  <Row term={`Buy · ${formatMoney(priced!.buyPrice)}/pc`}>
+                    {formatMoney(lineTotal(priced!.buyPrice, quantity))}{" "}
                     <span className="text-brass">
                       (+
-                      {formatMoney(totalsOf([{ ...line, quantity }]).margin)})
+                      {formatMoney(totalsOf([priced!]).margin)})
                     </span>
                   </Row>
                 )}
               </dl>
+              {priceError && (
+                <p role="alert" className="text-sm text-danger">
+                  {priceError}
+                </p>
+              )}
             </div>
             <div className="flex gap-3 px-4">
               {!isNew && (
@@ -722,7 +831,11 @@ function QuantitySheet({
                   <Trash2 className="text-danger" strokeWidth={1.5} />
                 </Button>
               )}
-              <Button type="submit" className="flex-1" disabled={quantity <= 0}>
+              <Button
+                type="submit"
+                className="flex-1"
+                disabled={quantity <= 0 || !!priceError}
+              >
                 {isNew ? "Add to order" : "Update"}
               </Button>
             </div>
@@ -730,6 +843,43 @@ function QuantitySheet({
         )}
       </SheetContent>
     </Sheet>
+  );
+}
+
+// A line's own price, with the Product's shown once it differs.
+function PriceInput({
+  label,
+  name,
+  value,
+  listed,
+  onChange,
+}: {
+  label: string;
+  name: string;
+  value: string;
+  listed: string;
+  onChange: (value: string) => void;
+}) {
+  const id = `order-${name}`;
+  const parsed = priceSchema.safeParse(value);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={id} className="text-ink-muted">
+        {label}
+      </Label>
+      <Input
+        id={id}
+        inputMode="decimal"
+        className="text-right num"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {parsed.success && parsed.data !== listed && (
+        <p className="text-xs text-ink-subtle num">
+          Product price {formatMoney(listed)}
+        </p>
+      )}
+    </div>
   );
 }
 

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { optional } from "@/lib/fields";
+import { priceSchema } from "@/lib/products";
 
 // Orders (SPEC §5): pure rules shared by the order form and the service.
 
@@ -30,6 +31,11 @@ export function splitWorkOrders<L extends { supplierId: string }>(
 // Quantity × price per piece.
 export function lineTotal(price: string, quantity: number): string {
   return taka(paisa(price) * quantity);
+}
+
+// Sum of money amounts, worked in paisa.
+export function sumAmounts(amounts: readonly string[]): string {
+  return taka(amounts.reduce((sum, amount) => sum + paisa(amount), 0));
 }
 
 export type OrderTotals = {
@@ -78,8 +84,9 @@ const optionalDate = z
   .optional()
   .transform((value) => value || null);
 
-// What the order form saves. Prices, names and Suppliers are not sent: the
-// service copies them from each Product (SPEC §5.3).
+// What the order form saves. Names and Suppliers are not sent: the service
+// copies them from each Product (SPEC §5.3), prices too unless a line
+// overrides them (Admin/Manager only).
 export const orderSchema = z.object({
   customerId: z.uuid("Pick a Customer."),
   orderDate: z.iso.date("Enter the order date."),
@@ -90,7 +97,14 @@ export const orderSchema = z.object({
   notes: optional,
   invoiceNote: optional,
   items: z
-    .array(z.object({ productId: z.uuid(), quantity: quantitySchema }))
+    .array(
+      z.object({
+        productId: z.uuid(),
+        quantity: quantitySchema,
+        sellPrice: priceSchema.optional(),
+        buyPrice: priceSchema.optional(),
+      }),
+    )
     .min(1, "Add at least one product.")
     .refine(
       (items) =>
@@ -100,3 +114,76 @@ export const orderSchema = z.object({
 });
 
 export type OrderInput = z.input<typeof orderSchema>;
+
+// SPEC §6.1, in flow order; mirrors the order_status enum (SPEC §14).
+export const ORDER_STATUSES = [
+  "created",
+  "wo_sent",
+  "delivered",
+  "invoiced",
+  "completed",
+  "cancelled",
+] as const;
+export type OrderStatus = (typeof ORDER_STATUSES)[number];
+
+// The Order list's search and filters (SPEC §9 /orders). They live in the
+// URL so dashboard tiles can link to a filtered list.
+export type OrderListFilters = {
+  query: string;
+  status?: OrderStatus;
+  customerId?: string;
+  supplierId?: string;
+  // Order date, both ends included (YYYY-MM-DD).
+  from?: string;
+  to?: string;
+  page: number;
+};
+
+type SearchParams = Record<string, string | string[] | undefined>;
+
+const param = <T>(schema: z.ZodType<T>, value: unknown) => {
+  const result = schema.safeParse(value);
+  return result.success ? result.data : undefined;
+};
+
+// Reads the list's URL; anything it can't read is left out.
+export function orderListFilters(params: SearchParams): OrderListFilters {
+  const filters: OrderListFilters = {
+    query: typeof params.q === "string" ? params.q.trim() : "",
+    status: param(z.enum(ORDER_STATUSES), params.status),
+    customerId: param(z.uuid(), params.customer),
+    supplierId: param(z.uuid(), params.supplier),
+    from: param(z.iso.date(), params.from),
+    to: param(z.iso.date(), params.to),
+    page: param(z.coerce.number().int().positive(), params.page) ?? 1,
+  };
+  return Object.fromEntries(
+    Object.entries(filters).filter(([, value]) => value !== undefined),
+  ) as OrderListFilters;
+}
+
+// The URL for a filtered list; the inverse of orderListFilters.
+export function orderListHref(filters: OrderListFilters): string {
+  const params = new URLSearchParams({
+    ...(filters.query && { q: filters.query }),
+    ...(filters.status && { status: filters.status }),
+    ...(filters.customerId && { customer: filters.customerId }),
+    ...(filters.supplierId && { supplier: filters.supplierId }),
+    ...(filters.from && { from: filters.from }),
+    ...(filters.to && { to: filters.to }),
+    ...(filters.page > 1 && { page: String(filters.page) }),
+  });
+  return params.size ? `/orders?${params}` : "/orders";
+}
+
+// The WO x/y badge, shown while some but not all of an Order's Work Orders
+// are sent (SPEC §6.1). `total` leaves out cancelled ones.
+export function woProgress({
+  sent,
+  total,
+}: {
+  sent: number;
+  total: number;
+}): string | null {
+  return sent > 0 && sent < total ? `WO ${sent}/${total}` : null;
+}

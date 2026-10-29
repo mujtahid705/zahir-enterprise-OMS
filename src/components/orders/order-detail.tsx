@@ -3,15 +3,17 @@ import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
 import { ChevronLeft } from "lucide-react";
 import { z } from "zod";
+import { DocumentPreview } from "@/components/orders/document-preview";
 import { StatusPill } from "@/components/orders/status-pill";
 import { TopBar } from "@/components/shell/top-bar";
 import { getCurrentUser } from "@/lib/auth";
 import { formatDate } from "@/lib/dates";
+import { fileName } from "@/lib/documents";
 import { formatMoney, formatPieces } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { orders, type OrderView } from "@/services/orders";
 
-// The Order page (SPEC §9 /orders/[id]): header, items and Work Orders.
+// The Order page (SPEC §9 /orders/[id]): header, items and documents.
 // Buy totals and Margin arrive only for roles that may see them; the
 // service leaves them out for Staff.
 
@@ -46,6 +48,7 @@ async function OrderDetail({ params }: { params: IdParams }) {
   const supplierOf = new Map(
     order.workOrders.map((wo) => [wo.supplierId, wo.supplierName]),
   );
+  const documentsUrl = `/api/orders/${order.id}/documents`;
   const details: [string, string | null][] = [
     ["Customer reference", order.customerRef],
     ["Delivery address", order.deliveryAddress],
@@ -159,32 +162,44 @@ async function OrderDetail({ params }: { params: IdParams }) {
         </div>
       </section>
 
-      <section className="flex flex-col gap-3">
-        <h3 className="section-label">Work Orders</h3>
-        <ul
-          aria-label="Work Orders"
-          className="flex flex-col divide-y divide-border rounded-xl border border-border bg-surface"
-        >
+      <section
+        aria-labelledby="documents"
+        className="flex flex-col rounded-xl border border-border bg-surface"
+      >
+        <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-4 py-3">
+          <h3 id="documents" className="section-label">
+            Documents
+          </h3>
+          <p className="text-xs text-ink-muted">Preview never changes status</p>
+        </div>
+        <DocumentGroup title="To suppliers" label="Work Orders">
           {order.workOrders.map((wo) => (
-            <li key={wo.id} className="flex items-center gap-3 px-4 py-3">
-              <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-canvas text-xs font-semibold text-navy">
-                {wo.letter}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-ink">
-                  <span className="num">{wo.woNo}</span> · {wo.supplierName}
-                </p>
-                <p className="text-xs text-ink-muted num">
-                  {wo.itemCount} {wo.itemCount === 1 ? "item" : "items"} ·{" "}
-                  {formatPieces(wo.quantity)}
-                </p>
-              </div>
-              <span className="text-xs text-ink-muted">
-                {WO_STATUS_LABEL[wo.status]}
-              </span>
-            </li>
+            <DocumentRow
+              key={wo.id}
+              badge={wo.letter}
+              number={wo.woNo}
+              recipient={wo.supplierName}
+              detail={`${wo.itemCount} ${wo.itemCount === 1 ? "item" : "items"} · ${formatPieces(wo.quantity)} · ${WO_STATUS_LABEL[wo.status]}`}
+              url={`${documentsUrl}/wo/${wo.id}`}
+            />
           ))}
-        </ul>
+        </DocumentGroup>
+        <DocumentGroup title="To customer" label="Customer documents">
+          <DocumentRow
+            badge="CH"
+            number={order.challanNo}
+            recipient="Challan"
+            url={`${documentsUrl}/challan`}
+            fileNameRecipient={order.customerName}
+          />
+          <DocumentRow
+            badge="INV"
+            number={order.invoiceNo}
+            recipient="Invoice"
+            url={`${documentsUrl}/invoice`}
+            fileNameRecipient={order.customerName}
+          />
+        </DocumentGroup>
       </section>
 
       <dl className="grid gap-x-8 gap-y-4 rounded-xl border border-border bg-surface p-4 sm:grid-cols-2 md:p-6">
@@ -200,6 +215,61 @@ async function OrderDetail({ params }: { params: IdParams }) {
         ))}
       </dl>
     </section>
+  );
+}
+
+function DocumentGroup({
+  title,
+  label,
+  children,
+}: {
+  title: string;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="px-4 pt-3 last:pb-1">
+      <h4 className="text-xs text-ink-muted">{title}</h4>
+      <ul aria-label={label} className="flex flex-col divide-y divide-border">
+        {children}
+      </ul>
+    </div>
+  );
+}
+
+// One document: its number, who it goes to and Preview. The PDF's file name
+// is named after the recipient (a Customer document after the Customer).
+function DocumentRow({
+  badge,
+  number,
+  recipient,
+  detail,
+  url,
+  fileNameRecipient = recipient,
+}: {
+  badge: string;
+  number: string;
+  recipient: string;
+  detail?: string;
+  url: string;
+  fileNameRecipient?: string;
+}) {
+  return (
+    <li className="flex items-center gap-3 py-3">
+      <span className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md bg-canvas px-1 text-xs font-semibold text-navy">
+        {badge}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-ink">
+          <span className="num">{number}</span> · {recipient}
+        </p>
+        {detail && <p className="text-xs text-ink-muted num">{detail}</p>}
+      </div>
+      <DocumentPreview
+        url={url}
+        fileName={fileName(number, fileNameRecipient)}
+      />
+    </li>
   );
 }
 

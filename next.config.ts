@@ -4,6 +4,13 @@ const nextConfig: NextConfig = {
   /* config options here */
   cacheComponents: true,
   partialPrefetching: true,
+  // Document PDFs read their fonts and the default logo from disk.
+  outputFileTracingIncludes: {
+    "/api/orders/*/documents/**": [
+      "./src/pdf/fonts/*.ttf",
+      "./brand/ze-logo-navy.svg",
+    ],
+  },
   experimental: {
     // forbidden() for role checks (requireRole).
     authInterrupts: true,

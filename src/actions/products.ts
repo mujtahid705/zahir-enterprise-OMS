@@ -4,28 +4,14 @@ import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import { field, formAction, type FormState } from "@/lib/form-state";
-import type { ProductEditInput } from "@/lib/products";
 import { PERMISSIONS } from "@/lib/permissions";
+import { productInputFrom } from "@/actions/product-input";
 import { products } from "@/services/products";
 
 // Products (SPEC §3): Admin/Manager write, Admin deletes. The service checks
 // the role again.
 
 const asEditor = () => requireRole(...PERMISSIONS.manageMasterData);
-
-function inputFrom(formData: FormData): ProductEditInput {
-  return {
-    supplierId: field(formData, "supplierId"),
-    name: field(formData, "name"),
-    size: field(formData, "size"),
-    thickness: field(formData, "thickness"),
-    colour: field(formData, "colour"),
-    printDetails: field(formData, "printDetails"),
-    description: field(formData, "description"),
-    sellPrice: field(formData, "sellPrice"),
-    buyPrice: field(formData, "buyPrice"),
-  };
-}
 
 export async function createProductAction(
   _prev: FormState,
@@ -35,7 +21,7 @@ export async function createProductAction(
   let id = "";
   const state = await formAction(async () => {
     ({ id } = await products.create(actor, {
-      ...inputFrom(formData),
+      ...productInputFrom(formData),
       customerId: field(formData, "customerId"),
     }));
   });
@@ -50,7 +36,7 @@ export async function updateProductAction(
 ): Promise<FormState> {
   const actor = await asEditor();
   const state = await formAction(() =>
-    products.update(actor, id, inputFrom(formData)),
+    products.update(actor, id, productInputFrom(formData)),
   );
   if (state?.error) return state;
   redirect(`/products/${id}`);
