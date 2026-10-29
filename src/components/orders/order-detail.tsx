@@ -11,6 +11,11 @@ import {
   X,
 } from "lucide-react";
 import { z } from "zod";
+import {
+  RecordHistory,
+  RecordTabs,
+  historyTab,
+} from "@/components/activity/record-history";
 import { DeactivatedBadge } from "@/components/deactivated-badge";
 import { DocumentPreview } from "@/components/orders/document-preview";
 import { RefreshPrices } from "@/components/orders/refresh-prices";
@@ -28,22 +33,17 @@ import {
 } from "@/components/orders/send-document";
 import {
   NeedsResendBadge,
-  ORDER_STATUS_LABEL,
   StatusPill,
   WoProgressBadge,
 } from "@/components/orders/status-pill";
 import { TopBar } from "@/components/shell/top-bar";
 import { Button } from "@/components/ui/button";
+import { eventLine } from "@/lib/activity-log";
 import { getCurrentUser } from "@/lib/auth";
 import { formatDate, formatDateTime, todayInDhaka } from "@/lib/dates";
 import { fileName, type DocumentRef } from "@/lib/documents";
 import { formatMoney, formatPieces } from "@/lib/money";
-import {
-  editBlock,
-  statusTargets,
-  woProgress,
-  type OrderStatus,
-} from "@/lib/orders";
+import { editBlock, statusTargets, woProgress } from "@/lib/orders";
 import { can } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import {
@@ -58,35 +58,46 @@ import {
 
 type IdParams = Promise<{ id: string }>;
 
-// SPEC §6.2.
-const WO_STATUS_LABEL: Record<
-  OrderView["workOrders"][number]["status"],
-  string
-> = { pending: "Not sent", sent: "Sent", cancelled: "Cancelled" };
-
 const DOCUMENT_LABEL: Record<DocumentRef["type"], string> = {
   work_order: "Work Order",
   challan: "Challan",
   invoice: "Invoice",
 };
 
-export function OrderDetailPage({ params }: { params: IdParams }) {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+export function OrderDetailPage({
+  params,
+  searchParams,
+}: {
+  params: IdParams;
+  searchParams: SearchParams;
+}) {
   return (
     <>
       <TopBar title="Orders" />
       <main className="flex-1 p-4 md:p-8">
         <Suspense>
-          <OrderDetail params={params} />
+          <OrderDetail params={params} searchParams={searchParams} />
         </Suspense>
       </main>
     </>
   );
 }
 
-async function OrderDetail({ params }: { params: IdParams }) {
+async function OrderDetail({
+  params,
+  searchParams,
+}: {
+  params: IdParams;
+  searchParams: SearchParams;
+}) {
   const actor = await getCurrentUser();
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
+  // Admins also get the full Activity Log of the Order (SPEC §9).
+  const tab = historyTab(actor, await searchParams);
+  const href = `/orders/${id}`;
   const [order, history] = await Promise.all([
     orders.get(actor, id),
     orders.history(actor, id),
@@ -203,101 +214,129 @@ async function OrderDetail({ params }: { params: IdParams }) {
         )}
       </div>
 
-      <dl
-        aria-label="Totals"
-        className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-4"
-      >
-        <Figure term="Sell total">{formatMoney(totals.sell)}</Figure>
-        {totals.buy !== null && (
-          <>
-            <Figure term="Buy total">{formatMoney(totals.buy)}</Figure>
-            <Figure term="Margin" accent>
-              {formatMoney(totals.margin!)}
-            </Figure>
-            <Figure term="Margin %" accent>
-              {totals.marginPercent}%
-            </Figure>
-          </>
-        )}
-      </dl>
+      {can(actor.role, "viewActivityLog") && (
+        <RecordTabs
+          label="Order"
+          tabs={[
+            { value: "order", label: "Order" },
+            { value: "history", label: "History" },
+          ]}
+          current={tab.history ? "history" : "order"}
+          href={(value) => (value === "history" ? `${href}?tab=history` : href)}
+        />
+      )}
 
-      <section className="flex flex-col gap-3">
-        <h3 className="section-label">Items</h3>
-        <div className="overflow-hidden rounded-xl border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead className="hidden bg-canvas md:table-header-group">
-              <tr className="border-b border-border-strong text-left">
-                <th className="px-4 py-3 section-label">Product</th>
-                <th className="px-4 py-3 section-label">Supplier</th>
-                <th className="px-4 py-3 text-right section-label">Qty</th>
-                <th className="px-4 py-3 text-right section-label whitespace-nowrap">
-                  Sell / pc
-                </th>
-                <th className="px-4 py-3 text-right section-label whitespace-nowrap">
-                  Sell total
-                </th>
-                {totals.buy !== null && (
-                  <th className="px-4 py-3 text-right section-label whitespace-nowrap">
-                    Buy total
-                  </th>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {order.items.map((item) => (
-                <tr
-                  key={item.id}
-                  className="flex flex-col gap-0.5 border-b border-border px-4 py-3 last:border-b-0 md:table-row md:p-0"
-                >
-                  <td className="md:px-4 md:py-3">
-                    <p className="font-medium text-ink">
-                      {item.productName}
-                      {item.deactivated && (
-                        <DeactivatedBadge className="ml-2 align-middle" />
-                      )}
-                    </p>
-                    {item.specText && (
-                      <p className="text-xs text-ink-muted">{item.specText}</p>
+      {tab.history ? (
+        <RecordHistory
+          actor={actor}
+          scope={{ orderId: order.id }}
+          page={tab.page}
+          pageHref={(n) => `${href}?tab=history&page=${n}`}
+        />
+      ) : (
+        <>
+          <dl
+            aria-label="Totals"
+            className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-4"
+          >
+            <Figure term="Sell total">{formatMoney(totals.sell)}</Figure>
+            {totals.buy !== null && (
+              <>
+                <Figure term="Buy total">{formatMoney(totals.buy)}</Figure>
+                <Figure term="Margin" accent>
+                  {formatMoney(totals.margin!)}
+                </Figure>
+                <Figure term="Margin %" accent>
+                  {totals.marginPercent}%
+                </Figure>
+              </>
+            )}
+          </dl>
+
+          <section className="flex flex-col gap-3">
+            <h3 className="section-label">Items</h3>
+            <div className="overflow-hidden rounded-xl border border-border bg-surface">
+              <table className="w-full text-sm">
+                <thead className="hidden bg-canvas md:table-header-group">
+                  <tr className="border-b border-border-strong text-left">
+                    <th className="px-4 py-3 section-label">Product</th>
+                    <th className="px-4 py-3 section-label">Supplier</th>
+                    <th className="px-4 py-3 text-right section-label">Qty</th>
+                    <th className="px-4 py-3 text-right section-label whitespace-nowrap">
+                      Sell / pc
+                    </th>
+                    <th className="px-4 py-3 text-right section-label whitespace-nowrap">
+                      Sell total
+                    </th>
+                    {totals.buy !== null && (
+                      <th className="px-4 py-3 text-right section-label whitespace-nowrap">
+                        Buy total
+                      </th>
                     )}
-                  </td>
-                  <td className="text-ink-muted md:px-4 md:text-ink">
-                    {supplierOf.get(item.supplierId)}
-                  </td>
-                  <Amount>{formatPieces(item.quantity)}</Amount>
-                  <Amount label="Sell / pc">
-                    {formatMoney(item.sellPrice)}
-                  </Amount>
-                  <Amount label="Sell total">
-                    {formatMoney(item.sellTotal)}
-                  </Amount>
-                  {item.buyTotal !== null && (
-                    <Amount label="Buy total">
-                      {formatMoney(item.buyTotal)}
-                    </Amount>
+                  </tr>
+                </thead>
+                <tbody>
+                  {order.items.map((item) => (
+                    <tr
+                      key={item.id}
+                      className="flex flex-col gap-0.5 border-b border-border px-4 py-3 last:border-b-0 md:table-row md:p-0"
+                    >
+                      <td className="md:px-4 md:py-3">
+                        <p className="font-medium text-ink">
+                          {item.productName}
+                          {item.deactivated && (
+                            <DeactivatedBadge className="ml-2 align-middle" />
+                          )}
+                        </p>
+                        {item.specText && (
+                          <p className="text-xs text-ink-muted">
+                            {item.specText}
+                          </p>
+                        )}
+                      </td>
+                      <td className="text-ink-muted md:px-4 md:text-ink">
+                        {supplierOf.get(item.supplierId)}
+                      </td>
+                      <Amount>{formatPieces(item.quantity)}</Amount>
+                      <Amount label="Sell / pc">
+                        {formatMoney(item.sellPrice)}
+                      </Amount>
+                      <Amount label="Sell total">
+                        {formatMoney(item.sellTotal)}
+                      </Amount>
+                      {item.buyTotal !== null && (
+                        <Amount label="Buy total">
+                          {formatMoney(item.buyTotal)}
+                        </Amount>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <DocumentsPanel order={order} />
+
+          <dl className="grid gap-x-8 gap-y-4 rounded-xl border border-border bg-surface p-4 sm:grid-cols-2 md:p-6">
+            {details.map(([term, value]) => (
+              <div key={term} className="flex flex-col gap-1">
+                <dt className="section-label">{term}</dt>
+                <dd
+                  className={cn(
+                    "whitespace-pre-line",
+                    !value && "text-ink-subtle",
                   )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+                >
+                  {value || "—"}
+                </dd>
+              </div>
+            ))}
+          </dl>
 
-      <DocumentsPanel order={order} />
-
-      <dl className="grid gap-x-8 gap-y-4 rounded-xl border border-border bg-surface p-4 sm:grid-cols-2 md:p-6">
-        {details.map(([term, value]) => (
-          <div key={term} className="flex flex-col gap-1">
-            <dt className="section-label">{term}</dt>
-            <dd
-              className={cn("whitespace-pre-line", !value && "text-ink-subtle")}
-            >
-              {value || "—"}
-            </dd>
-          </div>
-        ))}
-      </dl>
-
-      <OrderHistory entries={history} />
+          <OrderHistory entries={history} />
+        </>
+      )}
     </section>
   );
 }
@@ -545,7 +584,7 @@ function OrderHistory({ entries }: { entries: OrderHistoryEntry[] }) {
               key={entry.id}
               className="flex flex-col gap-0.5 px-4 py-3 sm:flex-row sm:items-baseline sm:gap-4"
             >
-              <p className="flex-1 text-sm text-ink">{historyLine(entry)}</p>
+              <p className="flex-1 text-sm text-ink">{eventLine(entry)}</p>
               <p className="text-xs text-ink-muted num">
                 {entry.userName ?? "System"} ·{" "}
                 {formatDateTime(entry.occurredAt)}
@@ -560,42 +599,6 @@ function OrderHistory({ entries }: { entries: OrderHistoryEntry[] }) {
       )}
     </section>
   );
-}
-
-function historyLine({
-  action,
-  entityType,
-  entityLabel,
-  details,
-}: OrderHistoryEntry): string {
-  const text = (key: string) =>
-    typeof details[key] === "string" ? (details[key] as string) : "";
-  const date = (key: string) => (text(key) ? formatDate(text(key)) : "");
-  const via = text("source") === "manual" ? "" : " (automatic)";
-  const status = (key: string) =>
-    ORDER_STATUS_LABEL[text(key) as OrderStatus] ?? text(key);
-  switch (action) {
-    case "document_download":
-      return `Downloaded ${entityLabel}, dated ${date("date")}`;
-    case "document_share":
-      return `Shared ${entityLabel}, dated ${date("date")}`;
-    case "document_date_change":
-      return `Changed the date of ${entityLabel} from ${date("from")} to ${date("to")}`;
-    case "status_change":
-      if (entityType === "work_orders")
-        return `${entityLabel} marked ${WO_STATUS_LABEL[text("to") as keyof typeof WO_STATUS_LABEL] ?? text("to")}`;
-      return `Status ${status("from")} → ${status("to")}${via}${text("note") && `: ${text("note")}`}`;
-    case "lock":
-      return text("source") === "manual"
-        ? `Order locked: marked ${status("to")}`
-        : "Order locked: Invoice sent";
-    case "unlock":
-      return `Order unlocked${text("reason") && `: ${text("reason")}`}`;
-    case "cancel":
-      return `Order cancelled${text("reason") && `: ${text("reason")}`}`;
-    case "restore":
-      return `Order restored to ${status("to")}`;
-  }
 }
 
 // A canvas strip under the Order header (DESIGN §7b): locked or cancelled,

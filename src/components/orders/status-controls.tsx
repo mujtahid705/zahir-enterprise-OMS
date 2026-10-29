@@ -11,14 +11,13 @@ import {
 } from "@/actions/orders";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { FormNotice } from "@/components/form-notice";
-import { ORDER_STATUS_LABEL } from "@/components/orders/status-pill";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import type { FormState } from "@/lib/form-state";
-import type { OrderStatus } from "@/lib/orders";
+import { ORDER_STATUS_LABEL, type OrderStatus } from "@/lib/orders";
 
 // The Order page's manual status controls (SPEC §5.5, §6.4). The server
 // checks every role again; these only offer what the role may do.
