@@ -45,6 +45,7 @@ function editOf(order: OrderView, products: OrderEdit["products"]): OrderEdit {
     },
     products,
     lines: order.items.map((item) => ({
+      itemId: item.id,
       id: item.productId,
       code: "",
       name: item.productName,

@@ -84,6 +84,24 @@ const optionalDate = z
   .optional()
   .transform((value) => value || null);
 
+const lineSchema = z.object({
+  productId: z.uuid(),
+  quantity: quantitySchema,
+  sellPrice: priceSchema.optional(),
+  buyPrice: priceSchema.optional(),
+});
+
+// An Order's lines: at least one, each Product once (SPEC §5.2).
+const linesSchema = <L extends typeof lineSchema>(line: L) =>
+  z
+    .array(line)
+    .min(1, "Add at least one product.")
+    .refine(
+      (items) =>
+        new Set(items.map((item) => item.productId)).size === items.length,
+      "A Product can only be on an Order once.",
+    );
+
 // What the order form saves. Names and Suppliers are not sent: the service
 // copies them from each Product (SPEC §5.3), prices too unless a line
 // overrides them (Admin/Manager only).
@@ -96,30 +114,19 @@ export const orderSchema = z.object({
   deliveryAddress: optional,
   notes: optional,
   invoiceNote: optional,
-  items: z
-    .array(
-      z.object({
-        productId: z.uuid(),
-        quantity: quantitySchema,
-        sellPrice: priceSchema.optional(),
-        buyPrice: priceSchema.optional(),
-      }),
-    )
-    .min(1, "Add at least one product.")
-    .refine(
-      (items) =>
-        new Set(items.map((item) => item.productId)).size === items.length,
-      "A Product can only be on an Order once.",
-    ),
+  items: linesSchema(lineSchema),
 });
 
 export type OrderInput = z.input<typeof orderSchema>;
 
-// What the edit form saves (SPEC §5.5). The Customer stays; a line already on
-// the Order keeps its snapshot, so its prices are sent only when changed.
-// `updatedAt` is the Order's as the form loaded it, null if never edited.
+// What the edit form saves (SPEC §5.5). The Customer stays. A line sent with
+// its itemId keeps its snapshot, so its prices are sent only when changed;
+// one without is new and copied from its Product, even if the same Product
+// was removed in this edit (SPEC §5.3). `updatedAt` is the Order's as the
+// form loaded it, null if never edited.
 export const orderEditSchema = orderSchema.omit({ customerId: true }).extend({
   updatedAt: z.iso.datetime({ offset: true }).nullable(),
+  items: linesSchema(lineSchema.extend({ itemId: z.uuid().optional() })),
 });
 
 export type OrderEditInput = z.input<typeof orderEditSchema>;

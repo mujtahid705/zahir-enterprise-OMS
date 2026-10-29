@@ -734,6 +734,7 @@ function editOf(order: NonNullable<Awaited<ReturnType<typeof orders.get>>>) {
     notes: order.notes ?? "",
     invoiceNote: order.invoiceNote ?? "",
     items: order.items.map((item) => ({
+      itemId: item.id,
       productId: item.productId,
       quantity: item.quantity,
     })),
@@ -769,7 +770,7 @@ describe("update", () => {
           deliveryDate: "2026-10-25",
           customerRef: "PO-91",
           notes: "Call before delivery",
-          items: [{ productId: c.carryBag.id, quantity: 800 }],
+          items: [{ ...editOf(loaded!).items[0]!, quantity: 800 }],
         },
         { executor: tx },
       );
@@ -877,28 +878,26 @@ describe("update", () => {
         { executor: tx },
       );
       const number = orderNo.slice("ORD-".length);
-      const edit = async (items: { productId: string; quantity: number }[]) =>
-        orders.update(
+      // Keeps the bread line, adds `added` new ones.
+      const edit = async (added: { productId: string; quantity: number }[]) => {
+        const loaded = editOf((await orders.get(staff, id, { executor: tx }))!);
+        const bread = loaded.items.find((i) => i.productId === c.bread.id)!;
+        return orders.update(
           staff,
           id,
-          {
-            ...editOf((await orders.get(staff, id, { executor: tx }))!),
-            items,
-          },
+          { ...loaded, items: [bread, ...added] },
           { executor: tx },
         );
+      };
 
       // Rahim Plastics' carry bag goes: WO-…-B is deleted.
-      await edit([{ productId: c.bread.id, quantity: 100 }]);
+      await edit([]);
       expect(
         (await orders.get(staff, id, { executor: tx }))?.workOrders,
       ).toMatchObject([{ woNo: `WO-${number}-A`, supplierId: c.suzinas.id }]);
 
       // A new Supplier gets C, never B again; Suzinas keeps A.
-      await edit([
-        { productId: c.bread.id, quantity: 100 },
-        { productId: tray.id, quantity: 50 },
-      ]);
+      await edit([{ productId: tray.id, quantity: 50 }]);
       const order = await orders.get(staff, id, { executor: tx });
       expect(order?.workOrders).toMatchObject([
         { letter: "A", supplierId: c.suzinas.id, itemCount: 1 },
@@ -985,16 +984,11 @@ describe("update", () => {
         true,
       ]);
 
+      const [bread, bag] = editOf(loaded!).items;
       await orders.update(
         staff,
         id,
-        {
-          ...editOf(loaded!),
-          items: [
-            { productId: c.bread.id, quantity: 100 },
-            { productId: c.carryBag.id, quantity: 300 },
-          ],
-        },
+        { ...editOf(loaded!), items: [bread!, { ...bag!, quantity: 300 }] },
         { executor: tx },
       );
       const kept = await orders.get(staff, id, { executor: tx });
@@ -1003,10 +997,7 @@ describe("update", () => {
       await orders.update(
         staff,
         id,
-        {
-          ...editOf(kept!),
-          items: [{ productId: c.bread.id, quantity: 100 }],
-        },
+        { ...editOf(kept!), items: [editOf(kept!).items[0]!] },
         { executor: tx },
       );
       const removed = await orders.get(staff, id, { executor: tx });
@@ -1028,6 +1019,49 @@ describe("update", () => {
           "A Product on this Order is no longer offered for this Customer. Remove it and try again.",
         ),
       );
+    },
+  );
+
+  dbTest(
+    "takes a fresh copy of a line removed and added again in one edit",
+    async (tx) => {
+      const admin = await seedActor(tx, "admin");
+      const staff = await seedActor(tx, "staff");
+      const c = await seedCatalogue(tx);
+      const { id } = await orders.create(staff, bagOrder(c), { executor: tx });
+      const loaded = await orders.get(staff, id, { executor: tx });
+      // The carry bag moves to Suzinas at a new price.
+      await products.update(
+        admin,
+        c.carryBag.id,
+        {
+          supplierId: c.suzinas.id,
+          name: "Carry bag large",
+          sellPrice: "4.50",
+          buyPrice: "3.20",
+        },
+        { executor: tx },
+      );
+
+      // A line sent without its itemId is new, even for a Product already
+      // on the Order.
+      await orders.update(
+        staff,
+        id,
+        {
+          ...editOf(loaded!),
+          items: [{ productId: c.carryBag.id, quantity: 500 }],
+        },
+        { executor: tx },
+      );
+
+      const order = await orders.get(staff, id, { executor: tx });
+      expect(order?.items).toMatchObject([
+        { supplierId: c.suzinas.id, sellPrice: "4.50", buyPrice: "3.20" },
+      ]);
+      expect(order?.workOrders).toMatchObject([
+        { letter: "B", supplierId: c.suzinas.id },
+      ]);
     },
   );
 });

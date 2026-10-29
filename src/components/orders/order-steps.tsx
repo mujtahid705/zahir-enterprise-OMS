@@ -54,6 +54,9 @@ export type Line = ProductOption & {
   listed: Prices;
   // Its Product, Customer or Supplier was deactivated since (SPEC §5.3).
   deactivated?: boolean;
+  // Set on a line already saved on an edited Order, so it keeps its
+  // snapshot; removing it and adding it again takes a fresh copy.
+  itemId?: string;
 };
 
 // The product picker and the New product form: 85% height (DESIGN §7a).
@@ -185,6 +188,7 @@ export function OrderSteps({
     startSaving(async () => {
       if (!customer) return;
       const items = lines.map((line) => ({
+        ...(line.itemId && { itemId: line.itemId }),
         productId: line.id,
         quantity: line.quantity,
         ...(line.sellPrice !== line.listed.sellPrice && {

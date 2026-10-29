@@ -515,8 +515,28 @@ async function history(
 
 export type OrderHistoryEntry = Awaited<ReturnType<typeof history>>[number];
 
-// The optimistic-lock check (SPEC §5.5): the Order must still be as the
-// form loaded it, or nothing is written.
+// Locks the Order for an edit and checks it may be edited (SPEC §5.5): still
+// as the form loaded it, then still before any document went out. The row
+// lock queues a concurrent edit or send behind this one. Undefined if the
+// Order doesn't exist.
+async function lockForEdit(tx: Tx, id: string, updatedAt: string | null) {
+  const [order] = await tx
+    .select()
+    .from(ordersTable)
+    .where(eq(ordersTable.id, id))
+    .for("update");
+  if (!order) return undefined;
+  await assertUnchanged(tx, order, updatedAt);
+  const wos = await tx
+    .select()
+    .from(workOrders)
+    .where(eq(workOrders.orderId, id));
+  const blocked = editBlock(order, wos);
+  if (blocked) throw new UserInputError(blocked);
+  return { order, wos };
+}
+
+// The optimistic-lock check: nothing is written over someone else's save.
 async function assertUnchanged(
   tx: Tx,
   order: typeof ordersTable.$inferSelect,
@@ -552,27 +572,22 @@ async function update(
   return withUser(
     actor,
     async (tx) => {
-      // The row lock queues a concurrent edit or send behind this one.
-      const [order] = await tx
+      const locked = await lockForEdit(tx, id, values.updatedAt);
+      if (!locked) return undefined;
+      const { order, wos } = locked;
+      const current = await tx
         .select()
-        .from(ordersTable)
-        .where(eq(ordersTable.id, id))
-        .for("update");
-      if (!order) return undefined;
-      const [wos, current] = await Promise.all([
-        tx.select().from(workOrders).where(eq(workOrders.orderId, id)),
-        tx.select().from(orderItems).where(eq(orderItems.orderId, id)),
-      ]);
-      const blocked = editBlock(order, wos);
-      if (blocked) throw new UserInputError(blocked);
-      await assertUnchanged(tx, order, values.updatedAt);
+        .from(orderItems)
+        .where(eq(orderItems.orderId, id));
 
-      const kept = new Map(current.map((item) => [item.productId, item]));
+      const kept = new Map(current.map((item) => [item.id, item]));
       const offered = new Map(
         (await pickable(tx, order.customerId)).map((row) => [row.id, row]),
       );
       const lines = values.items.map((item) => {
-        const existing = kept.get(item.productId);
+        const found = item.itemId ? kept.get(item.itemId) : undefined;
+        const existing =
+          found?.productId === item.productId ? found : undefined;
         if (existing)
           return {
             ...item,
@@ -594,8 +609,8 @@ async function update(
       });
 
       // Removed lines go first, so their Work Orders can follow.
-      const staying = new Set(values.items.map((item) => item.productId));
-      const removed = current.filter((item) => !staying.has(item.productId));
+      const staying = new Set(lines.map((line) => line.existing?.id));
+      const removed = current.filter((item) => !staying.has(item.id));
       if (removed.length)
         await tx.delete(orderItems).where(
           inArray(
@@ -728,19 +743,7 @@ async function refreshPrices(
   return withUser(
     actor,
     async (tx) => {
-      const [order] = await tx
-        .select()
-        .from(ordersTable)
-        .where(eq(ordersTable.id, id))
-        .for("update");
-      if (!order) return undefined;
-      const wos = await tx
-        .select({ status: workOrders.status })
-        .from(workOrders)
-        .where(eq(workOrders.orderId, id));
-      const blocked = editBlock(order, wos);
-      if (blocked) throw new UserInputError(blocked);
-      await assertUnchanged(tx, order, updatedAt);
+      if (!(await lockForEdit(tx, id, updatedAt))) return undefined;
 
       await tx
         .update(orderItems)
