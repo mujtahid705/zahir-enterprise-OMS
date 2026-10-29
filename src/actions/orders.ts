@@ -1,10 +1,11 @@
 "use server";
 
+import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { formAction, type FormState } from "@/lib/form-state";
-import type { OrderInput } from "@/lib/orders";
+import type { OrderEditInput, OrderInput } from "@/lib/orders";
 import { PERMISSIONS } from "@/lib/permissions";
 import { productInputFrom } from "@/actions/product-input";
 import { orders, type ProductOption } from "@/services/orders";
@@ -61,4 +62,37 @@ export async function createOrderAction(input: OrderInput): Promise<FormState> {
   });
   if (state?.error) return state;
   redirect(`/orders/${id}`);
+}
+
+const GONE = { error: "This order no longer exists." };
+
+// Saves the edit form (SPEC §5.5); a conflicting save comes back as the
+// form's error.
+export async function updateOrderAction(
+  id: string,
+  input: OrderEditInput,
+): Promise<FormState> {
+  const actor = await asEditor();
+  let found = true;
+  const state = await formAction(async () => {
+    found = !!(await orders.update(actor, id, input));
+  });
+  if (state?.error) return state;
+  if (!found) return GONE;
+  redirect(`/orders/${id}`);
+}
+
+// "Refresh prices from products" on the Order page (SPEC §5.3).
+export async function refreshOrderPricesAction(
+  id: string,
+  updatedAt: string | null,
+): Promise<FormState> {
+  const actor = await requireRole(...PERMISSIONS.overridePrices);
+  let found = true;
+  const state = await formAction(async () => {
+    found = !!(await orders.refreshPrices(actor, id, { updatedAt }));
+  }, "Prices refreshed from the products.");
+  if (!found) return GONE;
+  refresh();
+  return state;
 }

@@ -4,7 +4,7 @@ import { priceSchema } from "@/lib/products";
 
 // Orders (SPEC §5): pure rules shared by the order form and the service.
 
-const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+export const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 // Money is worked in paisa so sums of numeric(12,2) strings don't drift.
 const paisa = (amount: string) => Math.round(Number(amount) * 100);
@@ -84,6 +84,24 @@ const optionalDate = z
   .optional()
   .transform((value) => value || null);
 
+const lineSchema = z.object({
+  productId: z.uuid(),
+  quantity: quantitySchema,
+  sellPrice: priceSchema.optional(),
+  buyPrice: priceSchema.optional(),
+});
+
+// An Order's lines: at least one, each Product once (SPEC §5.2).
+const linesSchema = <L extends typeof lineSchema>(line: L) =>
+  z
+    .array(line)
+    .min(1, "Add at least one product.")
+    .refine(
+      (items) =>
+        new Set(items.map((item) => item.productId)).size === items.length,
+      "A Product can only be on an Order once.",
+    );
+
 // What the order form saves. Names and Suppliers are not sent: the service
 // copies them from each Product (SPEC §5.3), prices too unless a line
 // overrides them (Admin/Manager only).
@@ -96,24 +114,22 @@ export const orderSchema = z.object({
   deliveryAddress: optional,
   notes: optional,
   invoiceNote: optional,
-  items: z
-    .array(
-      z.object({
-        productId: z.uuid(),
-        quantity: quantitySchema,
-        sellPrice: priceSchema.optional(),
-        buyPrice: priceSchema.optional(),
-      }),
-    )
-    .min(1, "Add at least one product.")
-    .refine(
-      (items) =>
-        new Set(items.map((item) => item.productId)).size === items.length,
-      "A Product can only be on an Order once.",
-    ),
+  items: linesSchema(lineSchema),
 });
 
 export type OrderInput = z.input<typeof orderSchema>;
+
+// What the edit form saves (SPEC §5.5). The Customer stays. A line sent with
+// its itemId keeps its snapshot, so its prices are sent only when changed;
+// one without is new and copied from its Product, even if the same Product
+// was removed in this edit (SPEC §5.3). `updatedAt` is the Order's as the
+// form loaded it, null if never edited.
+export const orderEditSchema = orderSchema.omit({ customerId: true }).extend({
+  updatedAt: z.iso.datetime({ offset: true }).nullable(),
+  items: linesSchema(lineSchema.extend({ itemId: z.uuid().optional() })),
+});
+
+export type OrderEditInput = z.input<typeof orderEditSchema>;
 
 // SPEC §6.1, in flow order; mirrors the order_status enum (SPEC §14).
 export const ORDER_STATUSES = [
@@ -186,4 +202,25 @@ export function woProgress({
   total: number;
 }): string | null {
   return sent > 0 && sent < total ? `WO ${sent}/${total}` : null;
+}
+
+// Why an Order can't be edited yet, or null if it can (SPEC §5.5). Editing
+// is free until the first document goes out: a sent Work Order or the
+// Challan.
+export function editBlock(
+  order: {
+    status: OrderStatus;
+    isLocked: boolean;
+    challanDownloadedAt: Date | null;
+  },
+  workOrders: readonly { status: "pending" | "sent" | "cancelled" }[],
+): string | null {
+  if (order.status === "cancelled") return "This order is cancelled.";
+  if (order.isLocked) return "This order is locked.";
+  if (
+    order.challanDownloadedAt ||
+    workOrders.some((wo) => wo.status !== "pending")
+  )
+    return "Documents have been sent for this order, so it can't be edited here.";
+  return null;
 }

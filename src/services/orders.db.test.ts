@@ -12,7 +12,7 @@ import { withUser } from "@/db/with-user";
 import { dbTest, inRollback } from "@/db/test/rollback";
 import type { CurrentUser } from "@/lib/auth";
 import { NotAllowedError, UserInputError } from "@/lib/errors";
-import { todayInDhaka } from "@/lib/dates";
+import { formatDateTime, todayInDhaka } from "@/lib/dates";
 import type { Role } from "@/lib/permissions";
 import { orders, type OrderFilters } from "@/services/orders";
 import { customers, suppliers } from "@/services/parties";
@@ -718,6 +718,412 @@ describe("list", () => {
         { workOrders: { sent: 0, total: 1 }, needsResend: true },
         { workOrders: { sent: 1, total: 2 }, needsResend: true },
       ]);
+    },
+  );
+});
+
+// What the edit form sends back for an Order as it was loaded: its header,
+// its lines and the optimistic-lock token (SPEC §5.5).
+function editOf(order: NonNullable<Awaited<ReturnType<typeof orders.get>>>) {
+  return {
+    updatedAt: order.updatedAt?.toISOString() ?? null,
+    orderDate: order.orderDate,
+    deliveryDate: order.deliveryDate ?? "",
+    customerRef: order.customerRef ?? "",
+    deliveryAddress: order.deliveryAddress,
+    notes: order.notes ?? "",
+    invoiceNote: order.invoiceNote ?? "",
+    items: order.items.map((item) => ({
+      itemId: item.id,
+      productId: item.productId,
+      quantity: item.quantity,
+    })),
+  };
+}
+
+describe("update", () => {
+  dbTest(
+    "changes the header and quantities but keeps each line's snapshot",
+    async (tx) => {
+      const admin = await seedActor(tx, "admin");
+      const staff = await seedActor(tx, "staff");
+      const c = await seedCatalogue(tx);
+      const { id } = await orders.create(staff, bagOrder(c), { executor: tx });
+      const loaded = await orders.get(staff, id, { executor: tx });
+      await products.update(
+        admin,
+        c.carryBag.id,
+        {
+          supplierId: c.rahim.id,
+          name: "Carry bag XL",
+          sellPrice: "9.00",
+          buyPrice: "7.00",
+        },
+        { executor: tx },
+      );
+
+      await orders.update(
+        staff,
+        id,
+        {
+          ...editOf(loaded!),
+          deliveryDate: "2026-10-25",
+          customerRef: "PO-91",
+          notes: "Call before delivery",
+          items: [{ ...editOf(loaded!).items[0]!, quantity: 800 }],
+        },
+        { executor: tx },
+      );
+
+      const order = await orders.get(admin, id, { executor: tx });
+      expect(order).toMatchObject({
+        orderDate: "2026-10-20",
+        deliveryDate: "2026-10-25",
+        customerRef: "PO-91",
+        notes: "Call before delivery",
+        updatedBy: staff.id,
+      });
+      expect(order?.items).toMatchObject([
+        {
+          productName: "Carry bag large",
+          quantity: 800,
+          sellPrice: "4.00",
+          buyPrice: "3.00",
+          sellTotal: "3200.00",
+        },
+      ]);
+    },
+  );
+
+  dbTest(
+    "refuses to overwrite a save made since the form loaded",
+    async (tx) => {
+      const manager = await seedActor(tx, "manager");
+      const staff = await seedActor(tx, "staff");
+      const c = await seedCatalogue(tx);
+      const { id } = await orders.create(staff, bagOrder(c), { executor: tx });
+      const loaded = editOf((await orders.get(staff, id, { executor: tx }))!);
+
+      await orders.update(
+        manager,
+        id,
+        { ...loaded, customerRef: "PO-1" },
+        { executor: tx },
+      );
+      const saved = await orders.get(staff, id, { executor: tx });
+
+      await expect(
+        orders.update(
+          staff,
+          id,
+          { ...loaded, customerRef: "PO-2" },
+          { executor: tx },
+        ),
+      ).rejects.toThrow(
+        new UserInputError(
+          `This order was changed by Test manager at ${formatDateTime(saved!.updatedAt!)}. Reload to see their changes.`,
+        ),
+      );
+      expect(await orders.get(staff, id, { executor: tx })).toEqual(saved);
+
+      // Reloaded, the same edit goes through.
+      await orders.update(
+        staff,
+        id,
+        { ...editOf(saved!), customerRef: "PO-2" },
+        { executor: tx },
+      );
+      expect((await orders.get(staff, id, { executor: tx }))?.customerRef).toBe(
+        "PO-2",
+      );
+    },
+  );
+
+  dbTest(
+    "deletes a pending Work Order whose Supplier has no lines left and gives a new Supplier the next unused letter",
+    async (tx) => {
+      const admin = await seedActor(tx, "admin");
+      const staff = await seedActor(tx, "staff");
+      const c = await seedCatalogue(tx);
+      const plastech = await suppliers.create(
+        admin,
+        {
+          name: "Plastech",
+          phone: "01811000002",
+          whatsapp: "01811000002",
+          address: "Gazipur",
+        },
+        { executor: tx },
+      );
+      const tray = await products.create(
+        admin,
+        {
+          customerId: c.highwaySweets.id,
+          supplierId: plastech.id,
+          name: "Cake tray",
+          sellPrice: "6.00",
+          buyPrice: "5.00",
+        },
+        { executor: tx },
+      );
+      const { id, orderNo } = await orders.create(
+        staff,
+        {
+          ...bagOrder(c),
+          items: [
+            { productId: c.bread.id, quantity: 100 },
+            { productId: c.carryBag.id, quantity: 200 },
+          ],
+        },
+        { executor: tx },
+      );
+      const number = orderNo.slice("ORD-".length);
+      // Keeps the bread line, adds `added` new ones.
+      const edit = async (added: { productId: string; quantity: number }[]) => {
+        const loaded = editOf((await orders.get(staff, id, { executor: tx }))!);
+        const bread = loaded.items.find((i) => i.productId === c.bread.id)!;
+        return orders.update(
+          staff,
+          id,
+          { ...loaded, items: [bread, ...added] },
+          { executor: tx },
+        );
+      };
+
+      // Rahim Plastics' carry bag goes: WO-…-B is deleted.
+      await edit([]);
+      expect(
+        (await orders.get(staff, id, { executor: tx }))?.workOrders,
+      ).toMatchObject([{ woNo: `WO-${number}-A`, supplierId: c.suzinas.id }]);
+
+      // A new Supplier gets C, never B again; Suzinas keeps A.
+      await edit([{ productId: tray.id, quantity: 50 }]);
+      const order = await orders.get(staff, id, { executor: tx });
+      expect(order?.workOrders).toMatchObject([
+        { letter: "A", supplierId: c.suzinas.id, itemCount: 1 },
+        {
+          letter: "C",
+          woNo: `WO-${number}-C`,
+          supplierId: plastech.id,
+          supplierName: "Plastech",
+          status: "pending",
+          itemCount: 1,
+          quantity: 50,
+        },
+      ]);
+      expect(order?.items).toMatchObject([
+        { productId: c.bread.id, workOrderId: order!.workOrders[0]!.id },
+        {
+          productId: tray.id,
+          productName: "Cake tray",
+          sellPrice: "6.00",
+          workOrderId: order!.workOrders[1]!.id,
+        },
+      ]);
+    },
+  );
+
+  dbTest(
+    "refuses an Order once a Work Order or the Challan has gone out",
+    async (tx) => {
+      const staff = await seedActor(tx, "staff");
+      const c = await seedCatalogue(tx);
+      const woSent = await orders.create(staff, bagOrder(c), { executor: tx });
+      const challanSent = await orders.create(staff, bagOrder(c), {
+        executor: tx,
+      });
+      await withUser(
+        staff,
+        async (sp) => {
+          await sp
+            .update(workOrders)
+            .set({ status: "sent", sentAt: new Date() })
+            .where(eq(workOrders.orderId, woSent.id));
+          await sp
+            .update(ordersTable)
+            .set({ challanDownloadedAt: new Date() })
+            .where(eq(ordersTable.id, challanSent.id));
+        },
+        tx,
+      );
+
+      for (const { id } of [woSent, challanSent]) {
+        const loaded = await orders.get(staff, id, { executor: tx });
+        await expect(
+          orders.update(staff, id, editOf(loaded!), { executor: tx }),
+        ).rejects.toThrow(
+          new UserInputError(
+            "Documents have been sent for this order, so it can't be edited here.",
+          ),
+        );
+      }
+    },
+  );
+
+  dbTest(
+    "keeps a line whose Product was deactivated, but won't add it back once removed",
+    async (tx) => {
+      const admin = await seedActor(tx, "admin");
+      const staff = await seedActor(tx, "staff");
+      const c = await seedCatalogue(tx);
+      const { id } = await orders.create(
+        staff,
+        {
+          ...bagOrder(c),
+          items: [
+            { productId: c.bread.id, quantity: 100 },
+            { productId: c.carryBag.id, quantity: 200 },
+          ],
+        },
+        { executor: tx },
+      );
+      await products.setActive(admin, c.carryBag.id, false, { executor: tx });
+      const loaded = await orders.get(staff, id, { executor: tx });
+      expect(loaded?.items.map((item) => item.deactivated)).toEqual([
+        false,
+        true,
+      ]);
+
+      const [bread, bag] = editOf(loaded!).items;
+      await orders.update(
+        staff,
+        id,
+        { ...editOf(loaded!), items: [bread!, { ...bag!, quantity: 300 }] },
+        { executor: tx },
+      );
+      const kept = await orders.get(staff, id, { executor: tx });
+      expect(kept?.items[1]).toMatchObject({ quantity: 300 });
+
+      await orders.update(
+        staff,
+        id,
+        { ...editOf(kept!), items: [editOf(kept!).items[0]!] },
+        { executor: tx },
+      );
+      const removed = await orders.get(staff, id, { executor: tx });
+      await expect(
+        orders.update(
+          staff,
+          id,
+          {
+            ...editOf(removed!),
+            items: [
+              { productId: c.bread.id, quantity: 100 },
+              { productId: c.carryBag.id, quantity: 300 },
+            ],
+          },
+          { executor: tx },
+        ),
+      ).rejects.toThrow(
+        new UserInputError(
+          "A Product on this Order is no longer offered for this Customer. Remove it and try again.",
+        ),
+      );
+    },
+  );
+
+  dbTest(
+    "takes a fresh copy of a line removed and added again in one edit",
+    async (tx) => {
+      const admin = await seedActor(tx, "admin");
+      const staff = await seedActor(tx, "staff");
+      const c = await seedCatalogue(tx);
+      const { id } = await orders.create(staff, bagOrder(c), { executor: tx });
+      const loaded = await orders.get(staff, id, { executor: tx });
+      // The carry bag moves to Suzinas at a new price.
+      await products.update(
+        admin,
+        c.carryBag.id,
+        {
+          supplierId: c.suzinas.id,
+          name: "Carry bag large",
+          sellPrice: "4.50",
+          buyPrice: "3.20",
+        },
+        { executor: tx },
+      );
+
+      // A line sent without its itemId is new, even for a Product already
+      // on the Order.
+      await orders.update(
+        staff,
+        id,
+        {
+          ...editOf(loaded!),
+          items: [{ productId: c.carryBag.id, quantity: 500 }],
+        },
+        { executor: tx },
+      );
+
+      const order = await orders.get(staff, id, { executor: tx });
+      expect(order?.items).toMatchObject([
+        { supplierId: c.suzinas.id, sellPrice: "4.50", buyPrice: "3.20" },
+      ]);
+      expect(order?.workOrders).toMatchObject([
+        { letter: "B", supplierId: c.suzinas.id },
+      ]);
+    },
+  );
+});
+
+describe("refreshPrices", () => {
+  dbTest(
+    "re-copies each line's prices from its Product but never its Supplier",
+    async (tx) => {
+      const manager = await seedActor(tx, "manager");
+      const staff = await seedActor(tx, "staff");
+      const c = await seedCatalogue(tx);
+      const { id } = await orders.create(
+        manager,
+        {
+          ...bagOrder(c),
+          items: [
+            { productId: c.bread.id, quantity: 100, sellPrice: "2.20" },
+            { productId: c.carryBag.id, quantity: 200 },
+          ],
+        },
+        { executor: tx },
+      );
+      const loaded = await orders.get(manager, id, { executor: tx });
+      // The carry bag moves to Suzinas at a new price.
+      await products.update(
+        manager,
+        c.carryBag.id,
+        {
+          supplierId: c.suzinas.id,
+          name: "Carry bag large",
+          sellPrice: "4.50",
+          buyPrice: "3.20",
+        },
+        { executor: tx },
+      );
+      const token = { updatedAt: loaded!.updatedAt?.toISOString() ?? null };
+
+      await expect(
+        orders.refreshPrices(staff, id, token, { executor: tx }),
+      ).rejects.toThrow(NotAllowedError);
+      await orders.refreshPrices(manager, id, token, { executor: tx });
+
+      const order = await orders.get(manager, id, { executor: tx });
+      expect(order?.items).toMatchObject([
+        { productId: c.bread.id, sellPrice: "2.50", buyPrice: "2.00" },
+        {
+          productId: c.carryBag.id,
+          supplierId: c.rahim.id,
+          sellPrice: "4.50",
+          buyPrice: "3.20",
+          sellTotal: "900.00",
+        },
+      ]);
+      expect(order?.workOrders.map((wo) => wo.supplierId)).toEqual([
+        c.suzinas.id,
+        c.rahim.id,
+      ]);
+
+      // The token moved on, so a second refresh from the same page fails.
+      await expect(
+        orders.refreshPrices(manager, id, token, { executor: tx }),
+      ).rejects.toThrow(/^This order was changed by Test manager at /);
     },
   );
 });

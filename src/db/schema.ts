@@ -195,6 +195,9 @@ export const orders = pgTable(
     challanNeedsResend: boolean("challan_needs_resend")
       .notNull()
       .default(false),
+    // Work Order letters handed out so far (A = 1), deleted ones included,
+    // so a letter is never reused (SPEC §7).
+    woLettersUsed: integer("wo_letters_used").notNull().default(0),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     createdBy: uuid("created_by").references(() => profiles.id),
