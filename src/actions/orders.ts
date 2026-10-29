@@ -96,3 +96,18 @@ export async function refreshOrderPricesAction(
   refresh();
   return state;
 }
+
+// "Done" on a cancelled Work Order: its Supplier was told (SPEC §6.2).
+export async function acknowledgeCancelAction(
+  orderId: string,
+  workOrderId: string,
+): Promise<FormState> {
+  const actor = await requireRole(...PERMISSIONS.shareDocuments);
+  let found = true;
+  const state = await formAction(async () => {
+    found = !!(await orders.acknowledgeCancel(actor, orderId, workOrderId));
+  });
+  if (!found) return GONE;
+  refresh();
+  return state;
+}

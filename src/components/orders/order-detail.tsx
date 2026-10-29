@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { z } from "zod";
 import { DeactivatedBadge } from "@/components/deactivated-badge";
+import { AcknowledgeCancel } from "@/components/orders/acknowledge-cancel";
 import { DocumentPreview } from "@/components/orders/document-preview";
 import { RefreshPrices } from "@/components/orders/refresh-prices";
 import {
@@ -89,8 +90,9 @@ async function OrderDetail({ params }: { params: IdParams }) {
   const supplierOf = new Map(
     order.workOrders.map((wo) => [wo.supplierId, wo.supplierName]),
   );
-  // Free edit until the first document goes out (SPEC §5.5).
-  const editable = !editBlock(order, order.workOrders);
+  // Editable until locked; after sending, saving says what goes stale
+  // (SPEC §5.5).
+  const editable = !editBlock(order);
   const details: [string, string | null][] = [
     ["Customer reference", order.customerRef],
     ["Delivery address", order.deliveryAddress],
@@ -309,7 +311,7 @@ function DocumentsPanel({ order }: { order: OrderView }) {
       <DocumentGroup title="To suppliers" label="Work Orders">
         {order.workOrders.map((wo) =>
           wo.status === "cancelled" ? (
-            <CancelledWorkOrder key={wo.id} wo={wo} />
+            <CancelledWorkOrder key={wo.id} orderId={order.id} wo={wo} />
           ) : (
             <DocumentRow
               key={wo.id}
@@ -411,8 +413,15 @@ function DocumentRow({
   );
 }
 
-// A sent Work Order whose Supplier has no items left (SPEC §6.2).
-function CancelledWorkOrder({ wo }: { wo: OrderView["workOrders"][number] }) {
+// A sent Work Order whose Supplier has no items left (SPEC §6.2): Done
+// records that the Supplier was told.
+function CancelledWorkOrder({
+  orderId,
+  wo,
+}: {
+  orderId: string;
+  wo: OrderView["workOrders"][number];
+}) {
   return (
     <li
       aria-label={`${wo.woNo} · ${wo.supplierName}`}
@@ -431,6 +440,13 @@ function CancelledWorkOrder({ wo }: { wo: OrderView["workOrders"][number] }) {
           </p>
         )}
       </div>
+      {!wo.cancelAcknowledgedAt && (
+        <AcknowledgeCancel
+          orderId={orderId}
+          workOrderId={wo.id}
+          woNo={wo.woNo}
+        />
+      )}
     </li>
   );
 }
@@ -543,6 +559,8 @@ function historyLine({
       return `Order cancelled${text("reason") && `: ${text("reason")}`}`;
     case "restore":
       return "Order restored";
+    case "cancel_acknowledged":
+      return `Told ${text("supplier")} that ${entityLabel} is cancelled`;
   }
 }
 

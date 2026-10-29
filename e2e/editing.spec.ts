@@ -137,3 +137,70 @@ test("a stale edit is refused, prices refresh from Products, and a deactivated P
   await page.goto(orderUrl);
   await expect(page.getByText("Deactivated")).toBeVisible();
 });
+
+test("editing after sending warns first, flags Needs re-send and cancels an emptied Work Order", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "one run is enough");
+  test.setTimeout(90_000);
+  const run = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
+  const s = await seed(page, run);
+  const number = await addOrder(page, s.customer, [s.bread, s.bag]);
+  const woA = `WO-${number}-A`;
+  const woB = `WO-${number}-B`;
+  const download = async (docNo: string) => {
+    await page.getByRole("button", { name: `Download ${docNo}` }).click();
+    const saved = page.waitForEvent("download");
+    await page
+      .getByRole("dialog", { name: `Download ${docNo}` })
+      .getByRole("button", { name: "Download PDF" })
+      .click();
+    await saved;
+    await expect(page.getByRole("status")).toHaveText(/^Downloaded /);
+  };
+  await download(woA);
+  await download(woB);
+
+  await page.getByRole("link", { name: "Edit order" }).click();
+  const items = page.getByRole("list", { name: "Items" });
+  await items.getByRole("button", { name: new RegExp(s.bag) }).click();
+  await page
+    .getByRole("dialog", { name: s.bag })
+    .getByRole("button", { name: "Remove item" })
+    .press("Enter");
+  await items.getByRole("button", { name: new RegExp(s.bread) }).click();
+  const qty = page.getByRole("dialog", { name: s.bread });
+  await qty.getByRole("button", { name: "2,000", exact: true }).click();
+  await qty.getByRole("button", { name: "Update" }).click();
+  await page.getByRole("button", { name: "Review", exact: true }).click();
+  await page.getByRole("button", { name: "Save changes" }).click();
+
+  const warning = page.getByRole("alertdialog", {
+    name: "Save changes to sent documents?",
+  });
+  await expect(warning.getByRole("listitem")).toHaveText([
+    `${woA} to ${s.suzinas} no longer matches and will need re-sending.`,
+    `${woB} to ${s.rahim} will be cancelled: ${s.rahim} has no items left.`,
+  ]);
+  await warning.getByRole("button", { name: "Save changes" }).click();
+
+  const workOrders = page.getByRole("list", { name: "Work Orders" });
+  const rowA = workOrders.getByRole("listitem", {
+    name: `${woA} · ${s.suzinas}`,
+  });
+  const rowB = workOrders.getByRole("listitem", {
+    name: `${woB} · ${s.rahim}`,
+  });
+  await expect(rowA.getByText("Needs re-send")).toBeVisible();
+  await expect(
+    rowB.getByText(`Tell ${s.rahim} that ${woB} is cancelled.`),
+  ).toBeVisible();
+
+  await rowB.getByRole("button", { name: /^Done/ }).click();
+  await expect(rowB.getByText("Cancelled · supplier told")).toBeVisible();
+  await expect(rowB.getByRole("button", { name: /^Done/ })).toHaveCount(0);
+
+  // Re-sending clears the flag.
+  await download(woA);
+  await expect(rowA.getByText("Needs re-send")).toHaveCount(0);
+});

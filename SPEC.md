@@ -640,7 +640,7 @@ activity_kind:   data | event
 | occurred_at | timestamptz not null default now() | |
 | tx_id | bigint not null default txid_current() | groups rows from one save |
 | kind | activity_kind not null | `data` (trigger) or `event` (app) |
-| action | text not null | data: `insert`/`update`/`delete`; event: `status_change`, `document_download`, `document_share`, `document_date_change`, `lock`, `unlock`, `cancel`, `restore`, `login`, `login_failed`, `logout`, `password_change`, `password_reset` |
+| action | text not null | data: `insert`/`update`/`delete`; event: `status_change`, `document_download`, `document_share`, `document_date_change`, `lock`, `unlock`, `cancel`, `restore`, `cancel_acknowledged`, `login`, `login_failed`, `logout`, `password_change`, `password_reset` |
 | user_id | uuid → profiles, nullable | null for failed login / system |
 | user_name | text | snapshot |
 | entity_type | text | table name, e.g. `orders` |
