@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { requireRole } from "@/lib/auth";
+import { FormSkeleton } from "@/components/skeletons";
 import type { CompanyImageKind } from "@/lib/company-image";
 import { PERMISSIONS } from "@/lib/permissions";
 import { getCompanySettings } from "@/services/company-settings";
@@ -13,7 +14,7 @@ const DEFAULT_LOGO = "/brand/ze-logo-navy.svg";
 
 export default function Page() {
   return (
-    <Suspense>
+    <Suspense fallback={<FormSkeleton />}>
       <CompanySettings />
     </Suspense>
   );

@@ -9,6 +9,7 @@ import {
   WoProgressBadge,
 } from "@/components/orders/status-pill";
 import { TopBar } from "@/components/shell/top-bar";
+import { DashboardSkeleton } from "@/components/skeletons";
 import { getCurrentUser } from "@/lib/auth";
 import { NEEDS_ACTION_SHOWN } from "@/lib/dashboard";
 import { formatDate, formatMonth } from "@/lib/dates";
@@ -37,7 +38,7 @@ export function DashboardPage() {
     <>
       <TopBar title="Dashboard" />
       <main className="flex-1 p-4 md:p-8">
-        <Suspense>
+        <Suspense fallback={<DashboardSkeleton />}>
           <Overview />
         </Suspense>
       </main>

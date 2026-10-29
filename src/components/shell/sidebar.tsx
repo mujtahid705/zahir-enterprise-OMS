@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LinkPending } from "@/components/link-pending";
 import { cn } from "@/lib/utils";
 import { isActive, navItemsFor } from "@/lib/nav";
 import type { Role } from "@/lib/permissions";
@@ -66,7 +67,9 @@ function SidebarNav({ role }: { role: Role }) {
                 : "hover:bg-navy-hover hover:text-white",
             )}
           >
-            <Icon className="size-[18px] shrink-0" strokeWidth={1.5} />
+            <LinkPending>
+              <Icon className="size-[18px]" strokeWidth={1.5} />
+            </LinkPending>
             <span className="hidden xl:inline">{label}</span>
           </Link>
         );

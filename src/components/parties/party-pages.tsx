@@ -15,6 +15,12 @@ import {
 } from "@/components/activity/record-history";
 import { RecordActions } from "@/components/record-actions";
 import { RoleGate } from "@/components/role-gate";
+import { SearchForm, SearchPending } from "@/components/search-form";
+import {
+  DetailSkeleton,
+  FormSkeleton,
+  ListSkeleton,
+} from "@/components/skeletons";
 import { TopBar } from "@/components/shell/top-bar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,12 +50,20 @@ const STATUS_LABEL: Record<PartyStatus, string> = {
   all: "All",
 };
 
-function Page({ title, children }: { title: string; children: ReactNode }) {
+function Page({
+  title,
+  fallback,
+  children,
+}: {
+  title: string;
+  fallback: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <>
       <TopBar title={title} />
       <main className="flex-1 p-4 md:p-8">
-        <Suspense>{children}</Suspense>
+        <Suspense fallback={fallback}>{children}</Suspense>
       </main>
     </>
   );
@@ -85,7 +99,7 @@ export function PartyListPage({
   searchParams: SearchParams;
 }) {
   return (
-    <Page title={PARTY[kind].plural}>
+    <Page title={PARTY[kind].plural} fallback={<ListSkeleton />}>
       <PartyList kind={kind} searchParams={searchParams} />
     </Page>
   );
@@ -137,21 +151,24 @@ async function PartyList({
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <form role="search" className="w-full max-w-sm">
+        <SearchForm className="w-full max-w-sm">
           <Label htmlFor="q" className="sr-only">
             Search {plural}
           </Label>
-          <Input
-            id="q"
-            name="q"
-            type="search"
-            defaultValue={query}
-            placeholder="Search code, name or phone"
-          />
+          <div className="relative">
+            <Input
+              id="q"
+              name="q"
+              type="search"
+              defaultValue={query}
+              placeholder="Search code, name or phone"
+            />
+            <SearchPending />
+          </div>
           {status !== "active" && (
             <input type="hidden" name="status" value={status} />
           )}
-        </form>
+        </SearchForm>
         {canEdit && (
           <Button asChild>
             <Link href={`${path}/new`}>
@@ -248,7 +265,7 @@ export function PartyDetailPage({
   searchParams: SearchParams;
 }) {
   return (
-    <Page title={PARTY[kind].plural}>
+    <Page title={PARTY[kind].plural} fallback={<DetailSkeleton />}>
       <PartyDetail kind={kind} params={params} searchParams={searchParams} />
     </Page>
   );
@@ -428,13 +445,16 @@ async function PartyProducts({
 export function NewPartyPage({ kind }: { kind: PartyKind }) {
   const { label, plural, path } = PARTY[kind];
   return (
-    <Page title={plural}>
+    <Page title={plural} fallback={<FormSkeleton />}>
       <section className="flex max-w-xl flex-col gap-6">
         <div>
           <BackLink href={path}>{plural}</BackLink>
           <h2 className="text-lg font-semibold text-navy">Add {label}</h2>
         </div>
-        <RoleGate roles={PERMISSIONS.manageMasterData}>
+        <RoleGate
+          roles={PERMISSIONS.manageMasterData}
+          fallback={<FormSkeleton />}
+        >
           <PartyForm kind={kind} />
         </RoleGate>
       </section>
@@ -450,7 +470,7 @@ export function EditPartyPage({
   params: IdParams;
 }) {
   return (
-    <Page title={PARTY[kind].plural}>
+    <Page title={PARTY[kind].plural} fallback={<FormSkeleton />}>
       <EditParty kind={kind} params={params} />
     </Page>
   );

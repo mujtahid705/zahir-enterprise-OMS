@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { RoleGate } from "@/components/role-gate";
+import { FormSkeleton } from "@/components/skeletons";
 import { PERMISSIONS } from "@/lib/permissions";
 import { NewUserForm } from "./new-user-form";
 
@@ -13,7 +14,10 @@ export default function NewUserPage() {
         Set a temporary password and give it to the User. They can change it on
         their Account page.
       </p>
-      <RoleGate roles={PERMISSIONS.manageUsers}>
+      <RoleGate
+        roles={PERMISSIONS.manageUsers}
+        fallback={<FormSkeleton fields={4} />}
+      >
         <NewUserForm />
       </RoleGate>
     </section>

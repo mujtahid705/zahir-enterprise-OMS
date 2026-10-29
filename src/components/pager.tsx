@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LinkPending } from "@/components/link-pending";
 import { Button } from "@/components/ui/button";
 
 // Previous / Next under a paginated list (SPEC §9: 25 per page). `href`
@@ -28,12 +29,16 @@ export function Pager({
       <div className="flex gap-2">
         {page > 1 && (
           <Button asChild variant="outline">
-            <Link href={href(page - 1)}>Previous</Link>
+            <Link href={href(page - 1)}>
+              <LinkPending>Previous</LinkPending>
+            </Link>
           </Button>
         )}
         {page < pages && (
           <Button asChild variant="outline">
-            <Link href={href(page + 1)}>Next</Link>
+            <Link href={href(page + 1)}>
+              <LinkPending>Next</LinkPending>
+            </Link>
           </Button>
         )}
       </div>

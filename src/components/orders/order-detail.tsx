@@ -38,6 +38,7 @@ import {
   WoProgressBadge,
 } from "@/components/orders/status-pill";
 import { TopBar } from "@/components/shell/top-bar";
+import { DetailSkeleton } from "@/components/skeletons";
 import { Button } from "@/components/ui/button";
 import { eventLine } from "@/lib/activity-log";
 import { getCurrentUser } from "@/lib/auth";
@@ -77,7 +78,7 @@ export function OrderDetailPage({
     <>
       <TopBar title="Orders" />
       <main className="flex-1 p-4 md:p-8">
-        <Suspense>
+        <Suspense fallback={<DetailSkeleton />}>
           <OrderDetail params={params} searchParams={searchParams} />
         </Suspense>
       </main>

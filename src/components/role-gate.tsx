@@ -3,16 +3,19 @@ import { requireRole } from "@/lib/auth";
 import type { Role } from "@/lib/permissions";
 
 // Wraps a section's layout: renders it only for the given roles, otherwise
-// the (app) forbidden page. The check reads the session, so it streams.
+// the (app) forbidden page. The check reads the session, so it streams,
+// showing `fallback` (the section's skeleton) meanwhile.
 export function RoleGate({
   roles,
+  fallback,
   children,
 }: {
   roles: readonly Role[];
+  fallback?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <Suspense>
+    <Suspense fallback={fallback}>
       <Gate roles={roles}>{children}</Gate>
     </Suspense>
   );

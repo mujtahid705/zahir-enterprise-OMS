@@ -8,7 +8,9 @@ import {
   WoProgressBadge,
 } from "@/components/orders/status-pill";
 import { Pager } from "@/components/pager";
+import { SearchForm, SearchSubmit } from "@/components/search-form";
 import { TopBar } from "@/components/shell/top-bar";
+import { ListSkeleton } from "@/components/skeletons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,7 +45,7 @@ export function OrderListPage({
     <>
       <TopBar title="Orders" />
       <main className="flex-1 p-4 md:p-8">
-        <Suspense>
+        <Suspense fallback={<ListSkeleton />}>
           <OrderList searchParams={searchParams} />
         </Suspense>
       </main>
@@ -78,10 +80,7 @@ async function OrderList({ searchParams }: { searchParams: SearchParams }) {
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <form
-          role="search"
-          className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-[2fr_1fr_1fr_1fr_auto_auto_auto]"
-        >
+        <SearchForm className="grid w-full grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-[2fr_1fr_1fr_1fr_auto_auto_auto]">
           <div className="col-span-2 sm:col-span-3 lg:col-span-1">
             <Label htmlFor="q" className="sr-only">
               Search Orders
@@ -156,10 +155,8 @@ async function OrderList({ searchParams }: { searchParams: SearchParams }) {
             </Label>
             <Input id="to" name="to" type="date" defaultValue={filters.to} />
           </div>
-          <Button type="submit" variant="outline">
-            Filter
-          </Button>
-        </form>
+          <SearchSubmit>Filter</SearchSubmit>
+        </SearchForm>
         <div className="flex items-center gap-3">
           {filtered && (
             <Link
