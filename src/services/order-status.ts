@@ -23,24 +23,24 @@ import { assertUnchanged } from "@/services/orders";
 
 type Deps = { executor?: Db | Tx };
 
-const token = orderEditSchema.shape.updatedAt;
+const updatedAtSchema = orderEditSchema.shape.updatedAt;
 
 const changeSchema = z.object({
   to: z.enum(ORDER_STATUSES, "Pick a status."),
   note: optional,
-  updatedAt: token,
+  updatedAt: updatedAtSchema,
 });
 
 const cancelSchema = z.object({
   reason: required("Enter a reason for cancelling."),
-  updatedAt: token,
+  updatedAt: updatedAtSchema,
 });
 
-const restoreSchema = z.object({ updatedAt: token });
+const restoreSchema = z.object({ updatedAt: updatedAtSchema });
 
 const unlockSchema = z.object({
   reason: required("Enter a reason for unlocking."),
-  updatedAt: token,
+  updatedAt: updatedAtSchema,
 });
 
 type Order = typeof ordersTable.$inferSelect;
@@ -286,11 +286,8 @@ async function unlock(
         .update(ordersTable)
         .set({ isLocked: false, updatedAt: new Date(), updatedBy: actor.id })
         .where(eq(ordersTable.id, id));
-      await eventFor(
-        actor,
-        order,
-        tx,
-      )("unlock", {
+      const event = eventFor(actor, order, tx);
+      await event("unlock", {
         from: order.status,
         to: order.status,
         reason,

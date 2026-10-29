@@ -103,7 +103,7 @@ async function OrderDetail({ params }: { params: IdParams }) {
   );
   // Free edit until the first document goes out (SPEC §5.5).
   const editable = !editBlock(order, order.workOrders);
-  const bound = {
+  const version = {
     orderId: order.id,
     updatedAt: order.updatedAt?.toISOString() ?? null,
   };
@@ -157,25 +157,25 @@ async function OrderDetail({ params }: { params: IdParams }) {
             ` · Delivery by ${formatDate(order.deliveryDate)}`}
         </p>
         {order.isLocked && !cancelled && (
-          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-canvas px-3 py-2.5 text-sm text-ink-muted">
-            <Lock className="size-4 shrink-0" strokeWidth={1.75} />
-            <p className="flex-1">
-              Invoice sent, so this order is locked. Documents can still be
-              downloaded.
-            </p>
-            {can(actor.role, "unlockOrder") && <UnlockOrder {...bound} />}
-          </div>
+          <HeaderStrip
+            icon={<Lock className="size-4 shrink-0" strokeWidth={1.75} />}
+            action={
+              can(actor.role, "unlockOrder") && <UnlockOrder {...version} />
+            }
+          >
+            {order.invoiceDownloadedAt ? "Invoice sent, so this" : "This"} order
+            is locked. Documents can still be downloaded.
+          </HeaderStrip>
         )}
         {cancelled && (
-          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-canvas px-3 py-2.5 text-sm text-ink-muted">
-            <p className="flex-1">
-              Cancelled
-              {order.cancelledAt && ` ${formatDateTime(order.cancelledAt)}`}
-              {order.cancelReason && `: ${order.cancelReason}`}. This order is
-              read only.
-            </p>
-            {completesOrCancels && <RestoreOrder {...bound} />}
-          </div>
+          <HeaderStrip
+            action={completesOrCancels && <RestoreOrder {...version} />}
+          >
+            Cancelled
+            {order.cancelledAt && ` ${formatDateTime(order.cancelledAt)}`}
+            {order.cancelReason && `: ${order.cancelReason}`}. This order is
+            read only.
+          </HeaderStrip>
         )}
         {editable && (
           <div className="mt-4 flex flex-wrap items-start gap-2">
@@ -185,18 +185,20 @@ async function OrderDetail({ params }: { params: IdParams }) {
                 Edit order
               </Link>
             </Button>
-            {can(actor.role, "overridePrices") && <RefreshPrices {...bound} />}
+            {can(actor.role, "overridePrices") && (
+              <RefreshPrices {...version} />
+            )}
           </div>
         )}
         {completesOrCancels && !cancelled && (
           <div className="mt-4 flex flex-wrap items-start gap-2">
-            {order.status !== "completed" && <MarkCompleted {...bound} />}
-            <CancelOrder {...bound} />
+            {order.status !== "completed" && <MarkCompleted {...version} />}
+            <CancelOrder {...version} />
           </div>
         )}
         {targets.length > 0 && (
           <div className="mt-4">
-            <ChangeStatus {...bound} targets={targets} />
+            <ChangeStatus {...version} targets={targets} />
           </div>
         )}
       </div>
@@ -594,6 +596,26 @@ function historyLine({
     case "restore":
       return `Order restored to ${status("to")}`;
   }
+}
+
+// A canvas strip under the Order header (DESIGN §7b): locked or cancelled,
+// with its Unlock or Restore.
+function HeaderStrip({
+  icon,
+  action,
+  children,
+}: {
+  icon?: ReactNode;
+  action: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-canvas px-3 py-2.5 text-sm text-ink-muted">
+      {icon}
+      <p className="flex-1">{children}</p>
+      {action}
+    </div>
+  );
 }
 
 function Amount({ label, children }: { label?: string; children: ReactNode }) {

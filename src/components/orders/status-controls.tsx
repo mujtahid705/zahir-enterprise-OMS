@@ -24,7 +24,7 @@ import type { OrderStatus } from "@/lib/orders";
 // checks every role again; these only offer what the role may do.
 // `updatedAt` is the Order as the page loaded it.
 
-type Bound = { orderId: string; updatedAt: string | null };
+type OrderVersion = { orderId: string; updatedAt: string | null };
 
 // Change status: the steps statusTargets offers this role, with an
 // optional note for the history.
@@ -32,7 +32,7 @@ export function ChangeStatus({
   orderId,
   updatedAt,
   targets,
-}: Bound & { targets: readonly OrderStatus[] }) {
+}: OrderVersion & { targets: readonly OrderStatus[] }) {
   const [state, action, pending] = useActionState(
     changeOrderStatusAction.bind(null, orderId, updatedAt),
     undefined,
@@ -76,7 +76,7 @@ export function ChangeStatus({
 }
 
 // Mark Completed (Admin/Manager): the customer and supplier are paid.
-export function MarkCompleted({ orderId, updatedAt }: Bound) {
+export function MarkCompleted({ orderId, updatedAt }: OrderVersion) {
   const [state, action, pending] = useActionState(
     changeOrderStatusAction.bind(null, orderId, updatedAt),
     undefined,
@@ -103,7 +103,7 @@ export function MarkCompleted({ orderId, updatedAt }: Bound) {
 }
 
 // Cancel (Admin/Manager), with its required reason.
-export function CancelOrder({ orderId, updatedAt }: Bound) {
+export function CancelOrder({ orderId, updatedAt }: OrderVersion) {
   return (
     <ReasonDialog
       run={cancelOrderAction.bind(null, orderId, updatedAt)}
@@ -123,12 +123,12 @@ export function CancelOrder({ orderId, updatedAt }: Bound) {
 }
 
 // Admin's Unlock, in the lock strip (DESIGN §7b), with its required reason.
-export function UnlockOrder({ orderId, updatedAt }: Bound) {
+export function UnlockOrder({ orderId, updatedAt }: OrderVersion) {
   return (
     <ReasonDialog
       run={unlockOrderAction.bind(null, orderId, updatedAt)}
       title="Unlock this order?"
-      description="It can be changed again. Check the Invoice before sending it again; sending it locks the order."
+      description="Its document dates can be changed again. Check the Invoice before sending it again; sending it locks the order."
       label="Reason for unlocking"
       confirmLabel="Unlock"
       trigger={
@@ -142,7 +142,7 @@ export function UnlockOrder({ orderId, updatedAt }: Bound) {
 }
 
 // Restore (Admin/Manager): back to the status it had before cancelling.
-export function RestoreOrder({ orderId, updatedAt }: Bound) {
+export function RestoreOrder({ orderId, updatedAt }: OrderVersion) {
   const [state, action, pending] = useActionState(
     () => restoreOrderAction(orderId, updatedAt),
     undefined,
