@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getCurrentUser } from "@/lib/auth";
-import { formatDate } from "@/lib/dates";
+import { formatDate, formatMonth } from "@/lib/dates";
 import { formatMoney, formatPieces } from "@/lib/money";
 import type { OrderStatus } from "@/lib/orders";
 import {
@@ -294,11 +294,6 @@ function display(
         value
       );
   }
-}
-
-// "1999-01" as "Jan 1999".
-function formatMonth(value: string): string {
-  return formatDate(`${value}-01`).split(" ").slice(1).join(" ");
 }
 
 function rangeText({ from, to }: ReportFilters): string {

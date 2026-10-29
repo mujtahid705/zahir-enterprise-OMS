@@ -7,7 +7,6 @@ import {
   gte,
   lte,
   ne,
-  notInArray,
   sql,
 } from "drizzle-orm";
 import { db, type Db, type Tx } from "@/db/client";
@@ -198,7 +197,7 @@ async function openOrders({
     })
     .from(orders)
     .leftJoin(orderItems, eq(orderItems.orderId, orders.id))
-    .where(and(counted(range), notInArray(orders.status, ["completed"])))
+    .where(and(counted(range), ne(orders.status, "completed")))
     .groupBy(orders.id)
     .orderBy(asc(orders.orderDate), asc(orders.year), asc(orders.seq));
   return { rows, totals: { sell: money(rows, "sell") } };
