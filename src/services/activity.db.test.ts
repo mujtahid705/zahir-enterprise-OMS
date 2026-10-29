@@ -124,6 +124,23 @@ describe("list", () => {
     expect(await count({ query: "no such record" })).toBe(0);
   });
 
+  dbTest("finds a failed sign-in by the email tried", async (tx) => {
+    const admin = await seedActor(tx, "admin");
+    const email = `nobody-${Date.now()}@x.ze`;
+    await logEvent(
+      { action: "login_failed", user: null, details: { email } },
+      tx,
+    );
+
+    const { total } = await activity.list(
+      admin,
+      { query: email, actionType: "auth" },
+      { executor: tx },
+    );
+
+    expect(total).toBe(1);
+  });
+
   dbTest("scopes a History tab to its record", async (tx) => {
     const s = await seed(tx);
     await logEvent({ action: "login", user: s.manager }, tx);

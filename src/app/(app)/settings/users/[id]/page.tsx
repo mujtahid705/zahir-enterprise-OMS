@@ -5,12 +5,12 @@ import { Suspense } from "react";
 import { ChevronLeft } from "lucide-react";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
-import { PERMISSIONS, ROLE_LABEL, can } from "@/lib/permissions";
+import { PERMISSIONS, ROLE_LABEL } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { getUser } from "@/services/users";
 import {
+  DetailTabs,
   RecordHistory,
-  RecordTabs,
   historyTab,
 } from "@/components/activity/record-history";
 import { DeactivatedBadge } from "@/components/deactivated-badge";
@@ -39,12 +39,12 @@ async function UserDetail({
   const user = await getUser(actor, id);
   if (!user) notFound();
   const isSelf = user.id === actor.id;
-  const { history, page } = historyTab(actor, await searchParams);
   const href = `/settings/users/${user.id}`;
+  const tab = historyTab(actor, await searchParams, href);
 
   return (
     <section
-      className={cn("flex flex-col gap-8", history ? "max-w-3xl" : "max-w-md")}
+      className={cn("flex flex-col gap-8", tab.open ? "max-w-3xl" : "max-w-md")}
     >
       <div>
         <Link
@@ -63,24 +63,14 @@ async function UserDetail({
         </p>
       </div>
 
-      {can(actor.role, "viewActivityLog") && (
-        <RecordTabs
-          label="User"
-          tabs={[
-            { value: "details", label: "Details" },
-            { value: "history", label: "History" },
-          ]}
-          current={history ? "history" : "details"}
-          href={(tab) => (tab === "history" ? `${href}?tab=history` : href)}
-        />
-      )}
+      <DetailTabs label="User" path={href} tab={tab} />
 
-      {history ? (
+      {tab.open ? (
         <RecordHistory
           actor={actor}
           scope={{ entityType: "profiles", entityId: user.id }}
-          page={page}
-          pageHref={(n) => `${href}?tab=history&page=${n}`}
+          page={tab.page}
+          pageHref={tab.pageHref}
         />
       ) : isSelf ? (
         <p className="text-sm text-ink-muted">

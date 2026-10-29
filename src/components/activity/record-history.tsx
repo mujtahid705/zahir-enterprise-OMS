@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { ActivityEntries } from "@/components/activity/activity-entries";
 import { Pager } from "@/components/pager";
 import type { CurrentUser } from "@/lib/auth";
+import type { SearchParams } from "@/lib/fields";
 import { can } from "@/lib/permissions";
 import {
   ACTIVITY_PAGE_SIZE,
@@ -77,12 +78,47 @@ export function RecordTabs<T extends string>({
   );
 }
 
-// Which tab a detail page shows: History only if asked for and allowed.
+// A detail page's History tab (SPEC §9): whether the actor may see it (Admins
+// only), whether it is open, and its links. `path` is the detail page.
 export function historyTab(
   actor: CurrentUser,
-  params: Record<string, string | string[] | undefined>,
-): { history: boolean; page: number } {
-  const history =
-    params.tab === "history" && can(actor.role, "viewActivityLog");
-  return { history, page: Math.max(1, Number(params.page) || 1) };
+  params: SearchParams,
+  path: string,
+) {
+  const allowed = can(actor.role, "viewActivityLog");
+  return {
+    allowed,
+    open: allowed && params.tab === "history",
+    page: Math.max(1, Number(params.page) || 1),
+    href: `${path}?tab=history`,
+    pageHref: (page: number) => `${path}?tab=history&page=${page}`,
+  };
+}
+
+export type HistoryTab = ReturnType<typeof historyTab>;
+
+// The two tabs of a detail page whose only other tab is the record itself.
+export function DetailTabs({
+  label,
+  first = "Details",
+  path,
+  tab,
+}: {
+  label: string;
+  first?: string;
+  path: string;
+  tab: HistoryTab;
+}) {
+  if (!tab.allowed) return null;
+  return (
+    <RecordTabs
+      label={label}
+      tabs={[
+        { value: "record", label: first },
+        { value: "history", label: "History" },
+      ]}
+      current={tab.open ? "history" : "record"}
+      href={(value) => (value === "history" ? tab.href : path)}
+    />
+  );
 }

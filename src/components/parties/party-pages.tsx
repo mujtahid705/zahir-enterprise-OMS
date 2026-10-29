@@ -269,14 +269,14 @@ async function PartyDetail({
   const { label, plural, path } = PARTY[kind];
   const { actor, record } = await loadRecord(kind, params);
   const query = await searchParams;
-  const { history, page } = historyTab(actor, query);
-  const tab: Tab = history
+  const history = historyTab(actor, query, `${path}/${record.id}`);
+  const tab: Tab = history.open
     ? "history"
     : z.enum(TABS).catch("details").parse(query.tab);
   const tabs: { value: Tab; label: string }[] = [
     { value: "details", label: "Details" },
     { value: "products", label: "Products" },
-    ...(can(actor.role, "viewActivityLog")
+    ...(history.allowed
       ? [{ value: "history" as const, label: "History" }]
       : []),
   ];
@@ -306,8 +306,8 @@ async function PartyDetail({
         <RecordHistory
           actor={actor}
           scope={{ entityType: `${kind}s`, entityId: record.id }}
-          page={page}
-          pageHref={(n) => `${tabHref("history")}&page=${n}`}
+          page={history.page}
+          pageHref={history.pageHref}
         />
       )}
     </section>

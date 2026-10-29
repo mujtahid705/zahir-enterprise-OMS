@@ -8,7 +8,7 @@ import { addCustomer } from "./support/master-data";
 test("Admin finds a Customer's edit in the Activity Log, its History and the CSV", async ({
   page,
 }, testInfo) => {
-  const name = `Highway Sweets ${Date.now()} ${testInfo.project.name}`;
+  const name = `Logged Sweets ${Date.now()} ${testInfo.project.name}`;
   const detail = await addCustomer(page, name);
   await page.getByRole("link", { name: "Edit customer" }).click();
   await page.getByRole("textbox", { name: "Phone" }).fill("01722000000");

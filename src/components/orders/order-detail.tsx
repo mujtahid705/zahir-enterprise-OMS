@@ -12,8 +12,8 @@ import {
 } from "lucide-react";
 import { z } from "zod";
 import {
+  DetailTabs,
   RecordHistory,
-  RecordTabs,
   historyTab,
 } from "@/components/activity/record-history";
 import { DeactivatedBadge } from "@/components/deactivated-badge";
@@ -40,6 +40,7 @@ import { TopBar } from "@/components/shell/top-bar";
 import { Button } from "@/components/ui/button";
 import { eventLine } from "@/lib/activity-log";
 import { getCurrentUser } from "@/lib/auth";
+import type { SearchParams } from "@/lib/fields";
 import { formatDate, formatDateTime, todayInDhaka } from "@/lib/dates";
 import { fileName, type DocumentRef } from "@/lib/documents";
 import { formatMoney, formatPieces } from "@/lib/money";
@@ -64,14 +65,12 @@ const DOCUMENT_LABEL: Record<DocumentRef["type"], string> = {
   invoice: "Invoice",
 };
 
-type SearchParams = Promise<Record<string, string | string[] | undefined>>;
-
 export function OrderDetailPage({
   params,
   searchParams,
 }: {
   params: IdParams;
-  searchParams: SearchParams;
+  searchParams: Promise<SearchParams>;
 }) {
   return (
     <>
@@ -90,14 +89,14 @@ async function OrderDetail({
   searchParams,
 }: {
   params: IdParams;
-  searchParams: SearchParams;
+  searchParams: Promise<SearchParams>;
 }) {
   const actor = await getCurrentUser();
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
   // Admins also get the full Activity Log of the Order (SPEC §9).
-  const tab = historyTab(actor, await searchParams);
   const href = `/orders/${id}`;
+  const tab = historyTab(actor, await searchParams, href);
   const [order, history] = await Promise.all([
     orders.get(actor, id),
     orders.history(actor, id),
@@ -214,24 +213,14 @@ async function OrderDetail({
         )}
       </div>
 
-      {can(actor.role, "viewActivityLog") && (
-        <RecordTabs
-          label="Order"
-          tabs={[
-            { value: "order", label: "Order" },
-            { value: "history", label: "History" },
-          ]}
-          current={tab.history ? "history" : "order"}
-          href={(value) => (value === "history" ? `${href}?tab=history` : href)}
-        />
-      )}
+      <DetailTabs label="Order" first="Order" path={href} tab={tab} />
 
-      {tab.history ? (
+      {tab.open ? (
         <RecordHistory
           actor={actor}
           scope={{ orderId: order.id }}
           page={tab.page}
-          pageHref={(n) => `${href}?tab=history&page=${n}`}
+          pageHref={tab.pageHref}
         />
       ) : (
         <>

@@ -64,6 +64,8 @@ export const RECORD_TYPES = {
   settings: { label: "Company settings", tables: ["company_settings"] },
 } as const satisfies Record<string, { label: string; tables: string[] }>;
 export type RecordType = keyof typeof RECORD_TYPES;
+// A table the Activity Log records.
+export type LoggedTable = (typeof RECORD_TYPES)[RecordType]["tables"][number];
 
 // The Action type filter, over activity_log.action (SPEC §14).
 export const ACTION_TYPES = {
@@ -188,12 +190,15 @@ function recordOf(row: ActivityRow): string {
   if (row.orderNo && row.entityType && ORDER_TABLES.includes(row.entityType))
     return `Order ${row.orderNo}`;
   if (row.entityType === "company_settings") return "Company settings";
-  if (!row.entityType) return text(row.details, "email") || "—";
+  if (!row.entityType) return detailText(row.details, "email") || "—";
   const noun = NOUN[row.entityType] ?? row.entityType;
   return `${capitalize(noun)} ${row.entityLabel ?? ""}`.trim();
 }
 
-function text(details: Record<string, unknown> | null, key: string): string {
+function detailText(
+  details: Record<string, unknown> | null,
+  key: string,
+): string {
   const value = details?.[key];
   return typeof value === "string" ? value : "";
 }
@@ -295,7 +300,7 @@ export function eventLine({
 }: Pick<ActivityRow, "action" | "entityType" | "entityLabel"> & {
   details: Record<string, unknown> | null;
 }): string {
-  const get = (key: string) => text(details, key);
+  const get = (key: string) => detailText(details, key);
   const date = (key: string) => (get(key) ? formatDate(get(key)) : "");
   const via = get("source") === "manual" ? "" : " (automatic)";
   const status = (key: string) =>

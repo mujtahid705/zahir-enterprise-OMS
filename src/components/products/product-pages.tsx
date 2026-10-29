@@ -11,8 +11,8 @@ import { DeactivatedBadge } from "@/components/deactivated-badge";
 import { EmptyState } from "@/components/empty-state";
 import { Pager } from "@/components/pager";
 import {
+  DetailTabs,
   RecordHistory,
-  RecordTabs,
   historyTab,
 } from "@/components/activity/record-history";
 import { RecordActions } from "@/components/record-actions";
@@ -264,8 +264,8 @@ async function ProductDetail({
 }) {
   const actor = await getCurrentUser();
   const product = await loadProduct(params, actor);
-  const { history, page } = historyTab(actor, await searchParams);
   const href = `/products/${product.id}`;
+  const tab = historyTab(actor, await searchParams, href);
 
   return (
     <section className="flex max-w-2xl flex-col gap-8">
@@ -278,24 +278,14 @@ async function ProductDetail({
         </h2>
       </div>
 
-      {can(actor.role, "viewActivityLog") && (
-        <RecordTabs
-          label="Product"
-          tabs={[
-            { value: "details", label: "Details" },
-            { value: "history", label: "History" },
-          ]}
-          current={history ? "history" : "details"}
-          href={(tab) => (tab === "history" ? `${href}?tab=history` : href)}
-        />
-      )}
+      <DetailTabs label="Product" path={href} tab={tab} />
 
-      {history ? (
+      {tab.open ? (
         <RecordHistory
           actor={actor}
           scope={{ entityType: "products", entityId: product.id }}
-          page={page}
-          pageHref={(n) => `${href}?tab=history&page=${n}`}
+          page={tab.page}
+          pageHref={tab.pageHref}
         />
       ) : (
         <ProductDetails actor={actor} product={product} />

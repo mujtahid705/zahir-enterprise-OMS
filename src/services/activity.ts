@@ -25,6 +25,7 @@ import {
   type ActivityEntry,
   type ActivityFilters,
   type ActivityRow,
+  type LoggedTable,
 } from "@/lib/activity-log";
 import type { CurrentUser } from "@/lib/auth";
 import { TIMEZONE } from "@/lib/dates";
@@ -41,7 +42,7 @@ type Deps = { executor?: Db | Tx };
 // A History tab's record: an Order with its items, Work Orders and events,
 // or any other record by its table and id.
 export type HistoryScope =
-  { orderId: string } | { entityType: string; entityId: string };
+  { orderId: string } | { entityType: LoggedTable; entityId: string };
 
 // A constant, inlined so the day expression matches itself in GROUP BY.
 const zone = sql.raw(`'${TIMEZONE}'`);
@@ -70,6 +71,8 @@ function where(
     query
       ? or(
           ilike(activityLog.entityLabel, containing(query)),
+          // A failed sign-in has no record, only the email tried.
+          ilike(sql`${activityLog.details} ->> 'email'`, containing(query)),
           // An item's or Work Order's row is found by its Order's number.
           exists(
             db
