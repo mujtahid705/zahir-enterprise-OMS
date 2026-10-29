@@ -6,9 +6,16 @@ const TAKA = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 2,
 });
 
-export function formatMoney(amount: string | number): string {
+const WHOLE_TAKA = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
+
+// `whole` rounds to whole taka, for the Dashboard's figures (DESIGN.md §7).
+export function formatMoney(
+  amount: string | number,
+  { whole = false }: { whole?: boolean } = {},
+): string {
   const value = Number(amount);
-  return `${value < 0 ? "-" : ""}Tk ${TAKA.format(Math.abs(value))}`;
+  const digits = whole ? WHOLE_TAKA : TAKA;
+  return `${value < 0 ? "-" : ""}Tk ${digits.format(Math.abs(value))}`;
 }
 
 const PIECES = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });

@@ -36,4 +36,9 @@ describe("formatMonth", () => {
     expect(formatMonth("2026-10")).toBe("Oct 2026");
     expect(formatMonth("1999-01")).toBe("Jan 1999");
   });
+
+  it("takes another pattern", () => {
+    expect(formatMonth("2026-10", "MMMM yyyy")).toBe("October 2026");
+    expect(formatMonth("2026-10", "MMM")).toBe("Oct");
+  });
 });

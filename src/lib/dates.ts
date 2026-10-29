@@ -16,10 +16,11 @@ export function formatDate(value: string): string {
   return format(new Date(year!, month! - 1, day), "d MMM yyyy");
 }
 
-// A month (YYYY-MM) as shown in the app: "Oct 2026".
-export function formatMonth(value: string): string {
+// A month (YYYY-MM) as shown in the app: "Oct 2026", or in another
+// date-fns pattern ("MMMM yyyy" for "October 2026").
+export function formatMonth(value: string, pattern = "MMM yyyy"): string {
   const [year, month] = value.split("-").map(Number);
-  return format(new Date(year!, month! - 1, 1), "MMM yyyy");
+  return format(new Date(year!, month! - 1, 1), pattern);
 }
 
 // A moment as shown in the app, in Dhaka time: "16 Oct 2026, 3:45 PM".

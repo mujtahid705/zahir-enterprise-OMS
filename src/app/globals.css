@@ -68,6 +68,9 @@
   --chart-3: var(--brass);
   --chart-4: var(--ink-muted);
   --chart-5: var(--ink-subtle);
+  /* Dashboard 6-month chart (DESIGN.md §7): buy bars and their edge */
+  --chart-buy: #cbd5e1;
+  --chart-buy-edge: #94a3b8;
   --radius: 0.5rem;
   --sidebar: var(--navy);
   --sidebar-foreground: var(--sidebar-text);

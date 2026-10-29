@@ -20,7 +20,9 @@ test("app shell navigates between sections", async ({ page, isMobile }) => {
     .getByRole("navigation", { name: "Main" })
     .filter({ visible: true });
   await nav.getByRole("link", { name: "Orders" }).click();
-  await expect(page.getByRole("heading", { name: "Orders" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Orders", exact: true }),
+  ).toBeVisible();
 
   if (isMobile) {
     await nav.getByRole("link", { name: "New Order" }).click();
