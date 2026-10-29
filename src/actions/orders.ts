@@ -4,10 +4,11 @@ import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
-import { formAction, type FormState } from "@/lib/form-state";
+import { field, formAction, type FormState } from "@/lib/form-state";
 import type { OrderEditInput, OrderInput } from "@/lib/orders";
 import { PERMISSIONS } from "@/lib/permissions";
 import { productInputFrom } from "@/actions/product-input";
+import { orderStatus } from "@/services/order-status";
 import { orders, type ProductOption } from "@/services/orders";
 import { products } from "@/services/products";
 
@@ -110,4 +111,83 @@ export async function acknowledgeCancelAction(
   if (!found) return GONE;
   refresh();
   return state;
+}
+
+// The Order page's status controls (SPEC §5.5, §6.4). `updatedAt` is the
+// Order as the page loaded it; a stale page comes back as the form's error.
+async function statusAction(
+  run: () => Promise<unknown>,
+  message: string,
+): Promise<FormState> {
+  let found = true;
+  const state = await formAction(async () => {
+    found = !!(await run());
+  }, message);
+  if (state?.error) return state;
+  if (!found) return GONE;
+  refresh();
+  return state;
+}
+
+export async function changeOrderStatusAction(
+  id: string,
+  updatedAt: string | null,
+  _state: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const actor = await requireRole(...PERMISSIONS.changeStatusForward);
+  return statusAction(
+    () =>
+      orderStatus.change(actor, id, {
+        to: field(formData, "to"),
+        note: field(formData, "note"),
+        updatedAt,
+      }),
+    "Status changed.",
+  );
+}
+
+export async function cancelOrderAction(
+  id: string,
+  updatedAt: string | null,
+  _state: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const actor = await requireRole(...PERMISSIONS.completeOrCancel);
+  return statusAction(
+    () =>
+      orderStatus.cancel(actor, id, {
+        reason: field(formData, "reason"),
+        updatedAt,
+      }),
+    "Order cancelled.",
+  );
+}
+
+export async function restoreOrderAction(
+  id: string,
+  updatedAt: string | null,
+): Promise<FormState> {
+  const actor = await requireRole(...PERMISSIONS.completeOrCancel);
+  return statusAction(
+    () => orderStatus.restore(actor, id, { updatedAt }),
+    "Order restored.",
+  );
+}
+
+export async function unlockOrderAction(
+  id: string,
+  updatedAt: string | null,
+  _state: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const actor = await requireRole(...PERMISSIONS.unlockOrder);
+  return statusAction(
+    () =>
+      orderStatus.unlock(actor, id, {
+        reason: field(formData, "reason"),
+        updatedAt,
+      }),
+    "Order unlocked.",
+  );
 }

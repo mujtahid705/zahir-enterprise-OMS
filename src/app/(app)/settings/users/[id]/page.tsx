@@ -6,7 +6,13 @@ import { ChevronLeft } from "lucide-react";
 import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { PERMISSIONS, ROLE_LABEL } from "@/lib/permissions";
+import { cn } from "@/lib/utils";
 import { getUser } from "@/services/users";
+import {
+  DetailTabs,
+  RecordHistory,
+  historyTab,
+} from "@/components/activity/record-history";
 import { DeactivatedBadge } from "@/components/deactivated-badge";
 import { ActiveForm, ResetPasswordForm, RoleForm } from "./user-forms";
 
@@ -14,26 +20,32 @@ export const metadata: Metadata = { title: "User" };
 
 export default function UserPage({
   params,
+  searchParams,
 }: PageProps<"/settings/users/[id]">) {
   return (
     <Suspense>
-      <UserDetail params={params} />
+      <UserDetail params={params} searchParams={searchParams} />
     </Suspense>
   );
 }
 
 async function UserDetail({
   params,
-}: Pick<PageProps<"/settings/users/[id]">, "params">) {
+  searchParams,
+}: PageProps<"/settings/users/[id]">) {
   const { id } = await params;
   const actor = await requireRole(...PERMISSIONS.manageUsers);
   if (!z.uuid().safeParse(id).success) notFound();
   const user = await getUser(actor, id);
   if (!user) notFound();
   const isSelf = user.id === actor.id;
+  const href = `/settings/users/${user.id}`;
+  const tab = historyTab(actor, await searchParams, href);
 
   return (
-    <section className="flex max-w-md flex-col gap-8">
+    <section
+      className={cn("flex flex-col gap-8", tab.open ? "max-w-3xl" : "max-w-md")}
+    >
       <div>
         <Link
           href="/settings/users"
@@ -51,7 +63,16 @@ async function UserDetail({
         </p>
       </div>
 
-      {isSelf ? (
+      <DetailTabs label="User" path={href} tab={tab} />
+
+      {tab.open ? (
+        <RecordHistory
+          actor={actor}
+          scope={{ entityType: "profiles", entityId: user.id }}
+          page={tab.page}
+          pageHref={tab.pageHref}
+        />
+      ) : isSelf ? (
         <p className="text-sm text-ink-muted">
           This is you. Another Admin has to change your role or deactivate you;
           change your own name and password on your{" "}

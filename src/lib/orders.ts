@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { optional } from "@/lib/fields";
+import { optional, param, type SearchParams } from "@/lib/fields";
+import { can, type Role } from "@/lib/permissions";
 import { priceSchema } from "@/lib/products";
 
 // Orders (SPEC §5): pure rules shared by the order form and the service.
@@ -142,6 +143,34 @@ export const ORDER_STATUSES = [
 ] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
+// SPEC §6.1 labels.
+export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
+  created: "Created",
+  wo_sent: "WO Sent",
+  delivered: "Delivered",
+  invoiced: "Invoiced",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+// SPEC §6.2.
+export const WO_STATUS_LABEL: Record<"pending" | "sent" | "cancelled", string> =
+  { pending: "Not sent", sent: "Sent", cancelled: "Cancelled" };
+
+// What the Change status control offers (SPEC §3, §6.4): Staff only later
+// steps short of Completed, Admins and Managers any other step. Cancelling
+// takes a reason and a cancelled Order is restored instead, so neither is
+// offered here.
+export function statusTargets(role: Role, from: OrderStatus): OrderStatus[] {
+  if (from === "cancelled") return [];
+  const rank = ORDER_STATUSES.indexOf(from);
+  return ORDER_STATUSES.filter((to, index) => {
+    if (to === from || to === "cancelled") return false;
+    if (index < rank) return can(role, "changeStatusBackward");
+    return to !== "completed" || can(role, "completeOrCancel");
+  });
+}
+
 // The Order list's search and filters (SPEC §9 /orders). They live in the
 // URL so dashboard tiles can link to a filtered list.
 export type OrderListFilters = {
@@ -153,13 +182,6 @@ export type OrderListFilters = {
   from?: string;
   to?: string;
   page: number;
-};
-
-type SearchParams = Record<string, string | string[] | undefined>;
-
-const param = <T>(schema: z.ZodType<T>, value: unknown) => {
-  const result = schema.safeParse(value);
-  return result.success ? result.data : undefined;
 };
 
 // Reads the list's URL; anything it can't read is left out.

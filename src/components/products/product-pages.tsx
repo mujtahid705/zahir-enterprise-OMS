@@ -10,6 +10,11 @@ import {
 import { DeactivatedBadge } from "@/components/deactivated-badge";
 import { EmptyState } from "@/components/empty-state";
 import { Pager } from "@/components/pager";
+import {
+  DetailTabs,
+  RecordHistory,
+  historyTab,
+} from "@/components/activity/record-history";
 import { RecordActions } from "@/components/record-actions";
 import { TopBar } from "@/components/shell/top-bar";
 import { Button } from "@/components/ui/button";
@@ -236,17 +241,66 @@ async function ProductList({ searchParams }: { searchParams: SearchParams }) {
   );
 }
 
-export function ProductDetailPage({ params }: { params: IdParams }) {
+export function ProductDetailPage({
+  params,
+  searchParams,
+}: {
+  params: IdParams;
+  searchParams: SearchParams;
+}) {
   return (
     <Page>
-      <ProductDetail params={params} />
+      <ProductDetail params={params} searchParams={searchParams} />
     </Page>
   );
 }
 
-async function ProductDetail({ params }: { params: IdParams }) {
+async function ProductDetail({
+  params,
+  searchParams,
+}: {
+  params: IdParams;
+  searchParams: SearchParams;
+}) {
   const actor = await getCurrentUser();
   const product = await loadProduct(params, actor);
+  const href = `/products/${product.id}`;
+  const tab = historyTab(actor, await searchParams, href);
+
+  return (
+    <section className="flex max-w-2xl flex-col gap-8">
+      <div>
+        <BackLink href="/products">Products</BackLink>
+        <p className="text-sm text-ink-muted num">{product.code}</p>
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-navy">
+          {product.name}
+          {!product.isActive && <DeactivatedBadge />}
+        </h2>
+      </div>
+
+      <DetailTabs label="Product" path={href} tab={tab} />
+
+      {tab.open ? (
+        <RecordHistory
+          actor={actor}
+          scope={{ entityType: "products", entityId: product.id }}
+          page={tab.page}
+          pageHref={tab.pageHref}
+        />
+      ) : (
+        <ProductDetails actor={actor} product={product} />
+      )}
+    </section>
+  );
+}
+
+function ProductDetails({
+  actor,
+  product,
+}: {
+  actor: CurrentUser;
+  product: Awaited<ReturnType<typeof loadProduct>>;
+}) {
   const specs: [string, string | null][] = [
     ["Size", product.size],
     ["Thickness", product.thickness],
@@ -260,16 +314,7 @@ async function ProductDetail({ params }: { params: IdParams }) {
   ];
 
   return (
-    <section className="flex max-w-2xl flex-col gap-8">
-      <div>
-        <BackLink href="/products">Products</BackLink>
-        <p className="text-sm text-ink-muted num">{product.code}</p>
-        <h2 className="flex items-center gap-2 text-lg font-semibold text-navy">
-          {product.name}
-          {!product.isActive && <DeactivatedBadge />}
-        </h2>
-      </div>
-
+    <>
       <dl className="grid gap-x-8 gap-y-4 rounded-xl border border-border bg-surface p-4 sm:grid-cols-2 md:p-6">
         {parties.map(({ term, path, party }) => (
           <div key={term} className="flex flex-col gap-1">
@@ -340,7 +385,7 @@ async function ProductDetail({ params }: { params: IdParams }) {
           </Button>
         </RecordActions>
       )}
-    </section>
+    </>
   );
 }
 

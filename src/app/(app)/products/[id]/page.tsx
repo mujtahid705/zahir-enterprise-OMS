@@ -3,6 +3,9 @@ import { ProductDetailPage } from "@/components/products/product-pages";
 
 export const metadata: Metadata = { title: "Product" };
 
-export default function Page({ params }: PageProps<"/products/[id]">) {
-  return <ProductDetailPage params={params} />;
+export default function Page({
+  params,
+  searchParams,
+}: PageProps<"/products/[id]">) {
+  return <ProductDetailPage params={params} searchParams={searchParams} />;
 }

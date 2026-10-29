@@ -11,10 +11,22 @@ import {
   X,
 } from "lucide-react";
 import { z } from "zod";
+import {
+  DetailTabs,
+  RecordHistory,
+  historyTab,
+} from "@/components/activity/record-history";
 import { DeactivatedBadge } from "@/components/deactivated-badge";
 import { AcknowledgeCancel } from "@/components/orders/acknowledge-cancel";
 import { DocumentPreview } from "@/components/orders/document-preview";
 import { RefreshPrices } from "@/components/orders/refresh-prices";
+import {
+  CancelOrder,
+  ChangeStatus,
+  MarkCompleted,
+  RestoreOrder,
+  UnlockOrder,
+} from "@/components/orders/status-controls";
 import {
   SendDocument,
   SendToast,
@@ -22,17 +34,18 @@ import {
 } from "@/components/orders/send-document";
 import {
   NeedsResendBadge,
-  ORDER_STATUS_LABEL,
   StatusPill,
   WoProgressBadge,
 } from "@/components/orders/status-pill";
 import { TopBar } from "@/components/shell/top-bar";
 import { Button } from "@/components/ui/button";
+import { eventLine } from "@/lib/activity-log";
 import { getCurrentUser } from "@/lib/auth";
+import type { SearchParams } from "@/lib/fields";
 import { formatDate, formatDateTime, todayInDhaka } from "@/lib/dates";
 import { fileName, type DocumentRef } from "@/lib/documents";
 import { formatMoney, formatPieces } from "@/lib/money";
-import { editBlock, woProgress, type OrderStatus } from "@/lib/orders";
+import { editBlock, statusTargets, woProgress } from "@/lib/orders";
 import { can } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import {
@@ -47,35 +60,44 @@ import {
 
 type IdParams = Promise<{ id: string }>;
 
-// SPEC §6.2.
-const WO_STATUS_LABEL: Record<
-  OrderView["workOrders"][number]["status"],
-  string
-> = { pending: "Not sent", sent: "Sent", cancelled: "Cancelled" };
-
 const DOCUMENT_LABEL: Record<DocumentRef["type"], string> = {
   work_order: "Work Order",
   challan: "Challan",
   invoice: "Invoice",
 };
 
-export function OrderDetailPage({ params }: { params: IdParams }) {
+export function OrderDetailPage({
+  params,
+  searchParams,
+}: {
+  params: IdParams;
+  searchParams: Promise<SearchParams>;
+}) {
   return (
     <>
       <TopBar title="Orders" />
       <main className="flex-1 p-4 md:p-8">
         <Suspense>
-          <OrderDetail params={params} />
+          <OrderDetail params={params} searchParams={searchParams} />
         </Suspense>
       </main>
     </>
   );
 }
 
-async function OrderDetail({ params }: { params: IdParams }) {
+async function OrderDetail({
+  params,
+  searchParams,
+}: {
+  params: IdParams;
+  searchParams: Promise<SearchParams>;
+}) {
   const actor = await getCurrentUser();
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
+  // Admins also get the full Activity Log of the Order (SPEC §9).
+  const href = `/orders/${id}`;
+  const tab = historyTab(actor, await searchParams, href);
   const [order, history] = await Promise.all([
     orders.get(actor, id),
     orders.history(actor, id),
@@ -93,6 +115,13 @@ async function OrderDetail({ params }: { params: IdParams }) {
   // Editable until locked; after sending, saving says what goes stale
   // (SPEC §5.5).
   const editable = !editBlock(order);
+  const version = {
+    orderId: order.id,
+    updatedAt: order.updatedAt?.toISOString() ?? null,
+  };
+  const cancelled = order.status === "cancelled";
+  const targets = statusTargets(actor.role, order.status);
+  const completesOrCancels = can(actor.role, "completeOrCancel");
   const details: [string, string | null][] = [
     ["Customer reference", order.customerRef],
     ["Delivery address", order.deliveryAddress],
@@ -139,12 +168,26 @@ async function OrderDetail({ params }: { params: IdParams }) {
           {order.deliveryDate &&
             ` · Delivery by ${formatDate(order.deliveryDate)}`}
         </p>
-        {order.isLocked && (
-          <p className="mt-3 flex items-center gap-2 rounded-lg bg-canvas px-3 py-2.5 text-sm text-ink-muted">
-            <Lock className="size-4 shrink-0" strokeWidth={1.75} />
-            Invoice sent, so this order is locked. Documents can still be
-            downloaded.
-          </p>
+        {order.isLocked && !cancelled && (
+          <HeaderStrip
+            icon={<Lock className="size-4 shrink-0" strokeWidth={1.75} />}
+            action={
+              can(actor.role, "unlockOrder") && <UnlockOrder {...version} />
+            }
+          >
+            {order.invoiceDownloadedAt ? "Invoice sent, so this" : "This"} order
+            is locked. Documents can still be downloaded.
+          </HeaderStrip>
+        )}
+        {cancelled && (
+          <HeaderStrip
+            action={completesOrCancels && <RestoreOrder {...version} />}
+          >
+            Cancelled
+            {order.cancelledAt && ` ${formatDateTime(order.cancelledAt)}`}
+            {order.cancelReason && `: ${order.cancelReason}`}. This order is
+            read only.
+          </HeaderStrip>
         )}
         {editable && (
           <div className="mt-4 flex flex-wrap items-start gap-2">
@@ -155,110 +198,136 @@ async function OrderDetail({ params }: { params: IdParams }) {
               </Link>
             </Button>
             {can(actor.role, "overridePrices") && (
-              <RefreshPrices
-                orderId={order.id}
-                updatedAt={order.updatedAt?.toISOString() ?? null}
-              />
+              <RefreshPrices {...version} />
             )}
+          </div>
+        )}
+        {completesOrCancels && !cancelled && (
+          <div className="mt-4 flex flex-wrap items-start gap-2">
+            {order.status !== "completed" && <MarkCompleted {...version} />}
+            <CancelOrder {...version} />
+          </div>
+        )}
+        {targets.length > 0 && (
+          <div className="mt-4">
+            <ChangeStatus {...version} targets={targets} />
           </div>
         )}
       </div>
 
-      <dl
-        aria-label="Totals"
-        className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-4"
-      >
-        <Figure term="Sell total">{formatMoney(totals.sell)}</Figure>
-        {totals.buy !== null && (
-          <>
-            <Figure term="Buy total">{formatMoney(totals.buy)}</Figure>
-            <Figure term="Margin" accent>
-              {formatMoney(totals.margin!)}
-            </Figure>
-            <Figure term="Margin %" accent>
-              {totals.marginPercent}%
-            </Figure>
-          </>
-        )}
-      </dl>
+      <DetailTabs label="Order" first="Order" path={href} tab={tab} />
 
-      <section className="flex flex-col gap-3">
-        <h3 className="section-label">Items</h3>
-        <div className="overflow-hidden rounded-xl border border-border bg-surface">
-          <table className="w-full text-sm">
-            <thead className="hidden bg-canvas md:table-header-group">
-              <tr className="border-b border-border-strong text-left">
-                <th className="px-4 py-3 section-label">Product</th>
-                <th className="px-4 py-3 section-label">Supplier</th>
-                <th className="px-4 py-3 text-right section-label">Qty</th>
-                <th className="px-4 py-3 text-right section-label whitespace-nowrap">
-                  Sell / pc
-                </th>
-                <th className="px-4 py-3 text-right section-label whitespace-nowrap">
-                  Sell total
-                </th>
-                {totals.buy !== null && (
-                  <th className="px-4 py-3 text-right section-label whitespace-nowrap">
-                    Buy total
-                  </th>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {order.items.map((item) => (
-                <tr
-                  key={item.id}
-                  className="flex flex-col gap-0.5 border-b border-border px-4 py-3 last:border-b-0 md:table-row md:p-0"
-                >
-                  <td className="md:px-4 md:py-3">
-                    <p className="font-medium text-ink">
-                      {item.productName}
-                      {item.deactivated && (
-                        <DeactivatedBadge className="ml-2 align-middle" />
-                      )}
-                    </p>
-                    {item.specText && (
-                      <p className="text-xs text-ink-muted">{item.specText}</p>
+      {tab.open ? (
+        <RecordHistory
+          actor={actor}
+          scope={{ orderId: order.id }}
+          page={tab.page}
+          pageHref={tab.pageHref}
+        />
+      ) : (
+        <>
+          <dl
+            aria-label="Totals"
+            className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-4"
+          >
+            <Figure term="Sell total">{formatMoney(totals.sell)}</Figure>
+            {totals.buy !== null && (
+              <>
+                <Figure term="Buy total">{formatMoney(totals.buy)}</Figure>
+                <Figure term="Margin" accent>
+                  {formatMoney(totals.margin!)}
+                </Figure>
+                <Figure term="Margin %" accent>
+                  {totals.marginPercent}%
+                </Figure>
+              </>
+            )}
+          </dl>
+
+          <section className="flex flex-col gap-3">
+            <h3 className="section-label">Items</h3>
+            <div className="overflow-hidden rounded-xl border border-border bg-surface">
+              <table className="w-full text-sm">
+                <thead className="hidden bg-canvas md:table-header-group">
+                  <tr className="border-b border-border-strong text-left">
+                    <th className="px-4 py-3 section-label">Product</th>
+                    <th className="px-4 py-3 section-label">Supplier</th>
+                    <th className="px-4 py-3 text-right section-label">Qty</th>
+                    <th className="px-4 py-3 text-right section-label whitespace-nowrap">
+                      Sell / pc
+                    </th>
+                    <th className="px-4 py-3 text-right section-label whitespace-nowrap">
+                      Sell total
+                    </th>
+                    {totals.buy !== null && (
+                      <th className="px-4 py-3 text-right section-label whitespace-nowrap">
+                        Buy total
+                      </th>
                     )}
-                  </td>
-                  <td className="text-ink-muted md:px-4 md:text-ink">
-                    {supplierOf.get(item.supplierId)}
-                  </td>
-                  <Amount>{formatPieces(item.quantity)}</Amount>
-                  <Amount label="Sell / pc">
-                    {formatMoney(item.sellPrice)}
-                  </Amount>
-                  <Amount label="Sell total">
-                    {formatMoney(item.sellTotal)}
-                  </Amount>
-                  {item.buyTotal !== null && (
-                    <Amount label="Buy total">
-                      {formatMoney(item.buyTotal)}
-                    </Amount>
+                  </tr>
+                </thead>
+                <tbody>
+                  {order.items.map((item) => (
+                    <tr
+                      key={item.id}
+                      className="flex flex-col gap-0.5 border-b border-border px-4 py-3 last:border-b-0 md:table-row md:p-0"
+                    >
+                      <td className="md:px-4 md:py-3">
+                        <p className="font-medium text-ink">
+                          {item.productName}
+                          {item.deactivated && (
+                            <DeactivatedBadge className="ml-2 align-middle" />
+                          )}
+                        </p>
+                        {item.specText && (
+                          <p className="text-xs text-ink-muted">
+                            {item.specText}
+                          </p>
+                        )}
+                      </td>
+                      <td className="text-ink-muted md:px-4 md:text-ink">
+                        {supplierOf.get(item.supplierId)}
+                      </td>
+                      <Amount>{formatPieces(item.quantity)}</Amount>
+                      <Amount label="Sell / pc">
+                        {formatMoney(item.sellPrice)}
+                      </Amount>
+                      <Amount label="Sell total">
+                        {formatMoney(item.sellTotal)}
+                      </Amount>
+                      {item.buyTotal !== null && (
+                        <Amount label="Buy total">
+                          {formatMoney(item.buyTotal)}
+                        </Amount>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <DocumentsPanel order={order} />
+
+          <dl className="grid gap-x-8 gap-y-4 rounded-xl border border-border bg-surface p-4 sm:grid-cols-2 md:p-6">
+            {details.map(([term, value]) => (
+              <div key={term} className="flex flex-col gap-1">
+                <dt className="section-label">{term}</dt>
+                <dd
+                  className={cn(
+                    "whitespace-pre-line",
+                    !value && "text-ink-subtle",
                   )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+                >
+                  {value || "—"}
+                </dd>
+              </div>
+            ))}
+          </dl>
 
-      <DocumentsPanel order={order} />
-
-      <dl className="grid gap-x-8 gap-y-4 rounded-xl border border-border bg-surface p-4 sm:grid-cols-2 md:p-6">
-        {details.map(([term, value]) => (
-          <div key={term} className="flex flex-col gap-1">
-            <dt className="section-label">{term}</dt>
-            <dd
-              className={cn("whitespace-pre-line", !value && "text-ink-subtle")}
-            >
-              {value || "—"}
-            </dd>
-          </div>
-        ))}
-      </dl>
-
-      <OrderHistory entries={history} />
+          <OrderHistory entries={history} />
+        </>
+      )}
     </section>
   );
 }
@@ -268,6 +337,8 @@ async function OrderDetail({ params }: { params: IdParams }) {
 function DocumentsPanel({ order }: { order: OrderView }) {
   const url = `/api/orders/${order.id}/documents`;
   const today = todayInDhaka();
+  // A cancelled Order's documents can't be sent (SPEC §5.5): Preview only.
+  const readOnly = order.status === "cancelled";
   const shared = {
     locked: order.isLocked,
     pendingWorkOrders: order.workOrders.filter((wo) => wo.status === "pending")
@@ -315,6 +386,7 @@ function DocumentsPanel({ order }: { order: OrderView }) {
           ) : (
             <DocumentRow
               key={wo.id}
+              readOnly={readOnly}
               subtitle={wo.supplierName}
               send={{
                 ...shared,
@@ -335,6 +407,7 @@ function DocumentsPanel({ order }: { order: OrderView }) {
       </DocumentGroup>
       <DocumentGroup title="To customer" label="Customer documents">
         <DocumentRow
+          readOnly={readOnly}
           subtitle="Challan"
           send={customerDoc(
             { type: "challan" },
@@ -345,6 +418,7 @@ function DocumentsPanel({ order }: { order: OrderView }) {
           )}
         />
         <DocumentRow
+          readOnly={readOnly}
           subtitle="Invoice"
           send={customerDoc(
             { type: "invoice" },
@@ -383,10 +457,12 @@ function DocumentGroup({
 function DocumentRow({
   subtitle,
   send,
+  readOnly,
 }: {
   // The Supplier for a Work Order, else the document's name.
   subtitle: string;
   send: SendDocumentProps;
+  readOnly: boolean;
 }) {
   const state = send.needsResend ? "resend" : send.sentAt ? "sent" : "pending";
   return (
@@ -408,7 +484,7 @@ function DocumentRow({
         </p>
       </div>
       <DocumentPreview url={send.url} fileName={send.fileName} />
-      <SendDocument {...send} />
+      {!readOnly && <SendDocument {...send} />}
     </li>
   );
 }
@@ -513,7 +589,7 @@ function OrderHistory({ entries }: { entries: OrderHistoryEntry[] }) {
               key={entry.id}
               className="flex flex-col gap-0.5 px-4 py-3 sm:flex-row sm:items-baseline sm:gap-4"
             >
-              <p className="flex-1 text-sm text-ink">{historyLine(entry)}</p>
+              <p className="flex-1 text-sm text-ink">{eventLine(entry)}</p>
               <p className="text-xs text-ink-muted num">
                 {entry.userName ?? "System"} ·{" "}
                 {formatDateTime(entry.occurredAt)}
@@ -530,38 +606,24 @@ function OrderHistory({ entries }: { entries: OrderHistoryEntry[] }) {
   );
 }
 
-function historyLine({
+// A canvas strip under the Order header (DESIGN §7b): locked or cancelled,
+// with its Unlock or Restore.
+function HeaderStrip({
+  icon,
   action,
-  entityType,
-  entityLabel,
-  details,
-}: OrderHistoryEntry): string {
-  const text = (key: string) =>
-    typeof details[key] === "string" ? (details[key] as string) : "";
-  const date = (key: string) => (text(key) ? formatDate(text(key)) : "");
-  const via = text("source") === "manual" ? "" : " (automatic)";
-  switch (action) {
-    case "document_download":
-      return `Downloaded ${entityLabel}, dated ${date("date")}`;
-    case "document_share":
-      return `Shared ${entityLabel}, dated ${date("date")}`;
-    case "document_date_change":
-      return `Changed the date of ${entityLabel} from ${date("from")} to ${date("to")}`;
-    case "status_change":
-      if (entityType === "work_orders")
-        return `${entityLabel} marked ${WO_STATUS_LABEL[text("to") as keyof typeof WO_STATUS_LABEL] ?? text("to")}`;
-      return `Status ${ORDER_STATUS_LABEL[text("from") as OrderStatus] ?? text("from")} → ${ORDER_STATUS_LABEL[text("to") as OrderStatus] ?? text("to")}${via}`;
-    case "lock":
-      return "Order locked: Invoice sent";
-    case "unlock":
-      return `Order unlocked${text("reason") && `: ${text("reason")}`}`;
-    case "cancel":
-      return `Order cancelled${text("reason") && `: ${text("reason")}`}`;
-    case "restore":
-      return "Order restored";
-    case "cancel_acknowledged":
-      return `Told ${text("supplier")} that ${entityLabel} is cancelled`;
-  }
+  children,
+}: {
+  icon?: ReactNode;
+  action: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-canvas px-3 py-2.5 text-sm text-ink-muted">
+      {icon}
+      <p className="flex-1">{children}</p>
+      {action}
+    </div>
+  );
 }
 
 function Amount({ label, children }: { label?: string; children: ReactNode }) {

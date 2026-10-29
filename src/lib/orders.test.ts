@@ -9,6 +9,7 @@ import {
   specText,
   type PrintedOrder,
   splitWorkOrders,
+  statusTargets,
   woProgress,
 } from "@/lib/orders";
 
@@ -296,5 +297,37 @@ describe("editWarnings", () => {
     expect(
       editWarnings({ resend: [], cancelled: [], deleted: [], challan: false }),
     ).toEqual([]);
+  });
+});
+
+describe("statusTargets", () => {
+  it("offers Staff only later steps, never Completed", () => {
+    expect(statusTargets("staff", "created")).toEqual([
+      "wo_sent",
+      "delivered",
+      "invoiced",
+    ]);
+    expect(statusTargets("staff", "delivered")).toEqual(["invoiced"]);
+    expect(statusTargets("staff", "invoiced")).toEqual([]);
+  });
+
+  it("offers Admins and Managers every other step, back or forward", () => {
+    expect(statusTargets("manager", "delivered")).toEqual([
+      "created",
+      "wo_sent",
+      "invoiced",
+      "completed",
+    ]);
+    expect(statusTargets("admin", "completed")).toEqual([
+      "created",
+      "wo_sent",
+      "delivered",
+      "invoiced",
+    ]);
+  });
+
+  it("offers nothing on a cancelled Order: it is restored instead", () => {
+    expect(statusTargets("admin", "cancelled")).toEqual([]);
+    expect(statusTargets("staff", "cancelled")).toEqual([]);
   });
 });
