@@ -25,12 +25,14 @@ export type ActivityEvent = {
   user: Actor | null;
   // The record the event is about; defaults to the acting User's profile.
   entity?: { type: string; id: string; label: string };
+  // Set for an Order's events, so they show in its history (SPEC §6.4).
+  orderId?: string;
   details?: Record<string, unknown>;
 };
 
 // Pass the write's transaction so the event commits or rolls back with it.
 export async function logEvent(
-  { action, user, details, entity }: ActivityEvent,
+  { action, user, details, entity, orderId }: ActivityEvent,
   executor: Db | Tx = db,
 ): Promise<void> {
   const target =
@@ -43,6 +45,7 @@ export async function logEvent(
     entityType: target?.type,
     entityId: target?.id,
     entityLabel: target?.label,
+    orderId,
     details,
   });
 }

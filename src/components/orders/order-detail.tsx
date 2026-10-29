@@ -1,21 +1,36 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
-import { ChevronLeft } from "lucide-react";
+import { Check, ChevronLeft, Circle, Lock, RefreshCw, X } from "lucide-react";
 import { z } from "zod";
 import { DocumentPreview } from "@/components/orders/document-preview";
-import { StatusPill } from "@/components/orders/status-pill";
+import {
+  SendDocument,
+  SendToast,
+  type SendDocumentProps,
+} from "@/components/orders/send-document";
+import {
+  NeedsResendBadge,
+  ORDER_STATUS_LABEL,
+  StatusPill,
+  WoProgressBadge,
+} from "@/components/orders/status-pill";
 import { TopBar } from "@/components/shell/top-bar";
 import { getCurrentUser } from "@/lib/auth";
-import { formatDate } from "@/lib/dates";
-import { fileName } from "@/lib/documents";
+import { formatDate, formatDateTime, todayInDhaka } from "@/lib/dates";
+import { fileName, type DocumentRef } from "@/lib/documents";
 import { formatMoney, formatPieces } from "@/lib/money";
+import { woProgress, type OrderStatus } from "@/lib/orders";
 import { cn } from "@/lib/utils";
-import { orders, type OrderView } from "@/services/orders";
+import {
+  orders,
+  type OrderHistoryEntry,
+  type OrderView,
+} from "@/services/orders";
 
-// The Order page (SPEC §9 /orders/[id]): header, items and documents.
-// Buy totals and Margin arrive only for roles that may see them; the
-// service leaves them out for Staff.
+// The Order page (SPEC §9 /orders/[id]): header, items, documents and
+// history. Buy totals and Margin arrive only for roles that may see them;
+// the service leaves them out for Staff.
 
 type IdParams = Promise<{ id: string }>;
 
@@ -24,6 +39,12 @@ const WO_STATUS_LABEL: Record<
   OrderView["workOrders"][number]["status"],
   string
 > = { pending: "Not sent", sent: "Sent", cancelled: "Cancelled" };
+
+const DOCUMENT_LABEL: Record<DocumentRef["type"], string> = {
+  work_order: "Work Order",
+  challan: "Challan",
+  invoice: "Invoice",
+};
 
 export function OrderDetailPage({ params }: { params: IdParams }) {
   return (
@@ -42,13 +63,20 @@ async function OrderDetail({ params }: { params: IdParams }) {
   const actor = await getCurrentUser();
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
-  const order = await orders.get(actor, id);
+  const [order, history] = await Promise.all([
+    orders.get(actor, id),
+    orders.history(actor, id),
+  ]);
   if (!order) notFound();
   const { totals } = order;
+  const openWos = order.workOrders.filter((wo) => wo.status !== "cancelled");
+  const progress = woProgress({
+    sent: openWos.filter((wo) => wo.status === "sent").length,
+    total: openWos.length,
+  });
   const supplierOf = new Map(
     order.workOrders.map((wo) => [wo.supplierId, wo.supplierName]),
   );
-  const documentsUrl = `/api/orders/${order.id}/documents`;
   const details: [string, string | null][] = [
     ["Customer reference", order.customerRef],
     ["Delivery address", order.deliveryAddress],
@@ -71,6 +99,12 @@ async function OrderDetail({ params }: { params: IdParams }) {
             {order.orderNo}
           </h2>
           <StatusPill status={order.status} />
+          {progress && <WoProgressBadge label={progress} />}
+          {order.isLocked && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-border-strong px-2.5 py-0.5 text-xs text-ink-muted">
+              <Lock className="size-3" strokeWidth={1.75} /> Locked
+            </span>
+          )}
         </div>
         <p className="mt-1 text-ink">
           <Link
@@ -86,6 +120,13 @@ async function OrderDetail({ params }: { params: IdParams }) {
           {order.deliveryDate &&
             ` · Delivery by ${formatDate(order.deliveryDate)}`}
         </p>
+        {order.isLocked && (
+          <p className="mt-3 flex items-center gap-2 rounded-lg bg-canvas px-3 py-2.5 text-sm text-ink-muted">
+            <Lock className="size-4 shrink-0" strokeWidth={1.75} />
+            Invoice sent, so this order is locked. Documents can still be
+            downloaded.
+          </p>
+        )}
       </div>
 
       <dl
@@ -162,45 +203,7 @@ async function OrderDetail({ params }: { params: IdParams }) {
         </div>
       </section>
 
-      <section
-        aria-labelledby="documents"
-        className="flex flex-col rounded-xl border border-border bg-surface"
-      >
-        <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-4 py-3">
-          <h3 id="documents" className="section-label">
-            Documents
-          </h3>
-          <p className="text-xs text-ink-muted">Preview never changes status</p>
-        </div>
-        <DocumentGroup title="To suppliers" label="Work Orders">
-          {order.workOrders.map((wo) => (
-            <DocumentRow
-              key={wo.id}
-              badge={wo.letter}
-              number={wo.woNo}
-              recipient={wo.supplierName}
-              detail={`${wo.itemCount} ${wo.itemCount === 1 ? "item" : "items"} · ${formatPieces(wo.quantity)} · ${WO_STATUS_LABEL[wo.status]}`}
-              url={`${documentsUrl}/wo/${wo.id}`}
-            />
-          ))}
-        </DocumentGroup>
-        <DocumentGroup title="To customer" label="Customer documents">
-          <DocumentRow
-            badge="CH"
-            number={order.challanNo}
-            recipient="Challan"
-            url={`${documentsUrl}/challan`}
-            fileNameRecipient={order.customerName}
-          />
-          <DocumentRow
-            badge="INV"
-            number={order.invoiceNo}
-            recipient="Invoice"
-            url={`${documentsUrl}/invoice`}
-            fileNameRecipient={order.customerName}
-          />
-        </DocumentGroup>
-      </section>
+      <DocumentsPanel order={order} />
 
       <dl className="grid gap-x-8 gap-y-4 rounded-xl border border-border bg-surface p-4 sm:grid-cols-2 md:p-6">
         {details.map(([term, value]) => (
@@ -214,6 +217,104 @@ async function OrderDetail({ params }: { params: IdParams }) {
           </div>
         ))}
       </dl>
+
+      <OrderHistory entries={history} />
+    </section>
+  );
+}
+
+// The documents panel, "Checklist" (DESIGN §7b): every Work Order, then
+// the Challan and Invoice, each with its state, Preview and send button.
+function DocumentsPanel({ order }: { order: OrderView }) {
+  const url = `/api/orders/${order.id}/documents`;
+  const today = todayInDhaka();
+  const shared = {
+    locked: order.isLocked,
+    pendingWorkOrders: order.workOrders.filter((wo) => wo.status === "pending")
+      .length,
+    challanSent: !!order.challanDownloadedAt,
+    orderDate: order.orderDate,
+    today,
+  };
+  const customerDoc = (
+    ref: { type: "challan" } | { type: "invoice" },
+    number: string,
+    storedDate: string | null,
+    sentAt: Date | null,
+    needsResend: boolean,
+  ): SendDocumentProps => ({
+    ...shared,
+    url: `${url}/${ref.type}`,
+    docRef: ref,
+    number,
+    title: DOCUMENT_LABEL[ref.type],
+    recipient: order.customerName,
+    fileName: fileName(number, order.customerName),
+    whatsapp: order.customerWhatsapp,
+    storedDate,
+    sentAt: sentAt && formatDateTime(sentAt),
+    needsResend,
+  });
+
+  return (
+    <section
+      aria-labelledby="documents"
+      className="flex flex-col rounded-xl border border-border bg-surface"
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-4 py-3">
+        <h3 id="documents" className="section-label">
+          Documents
+        </h3>
+        <p className="text-xs text-ink-muted">Preview never changes status</p>
+      </div>
+      <SendToast />
+      <DocumentGroup title="To suppliers" label="Work Orders">
+        {order.workOrders.map((wo) =>
+          wo.status === "cancelled" ? (
+            <CancelledWorkOrder key={wo.id} wo={wo} />
+          ) : (
+            <DocumentRow
+              key={wo.id}
+              subtitle={wo.supplierName}
+              send={{
+                ...shared,
+                url: `${url}/wo/${wo.id}`,
+                docRef: { type: "work_order", workOrderId: wo.id },
+                number: wo.woNo,
+                title: DOCUMENT_LABEL.work_order,
+                recipient: wo.supplierName,
+                fileName: fileName(wo.woNo, wo.supplierName),
+                whatsapp: wo.supplierWhatsapp,
+                storedDate: wo.woDate,
+                sentAt: wo.sentAt && formatDateTime(wo.sentAt),
+                needsResend: wo.status === "sent" && wo.needsResend,
+              }}
+            />
+          ),
+        )}
+      </DocumentGroup>
+      <DocumentGroup title="To customer" label="Customer documents">
+        <DocumentRow
+          subtitle="Challan"
+          send={customerDoc(
+            { type: "challan" },
+            order.challanNo,
+            order.challanDate,
+            order.challanDownloadedAt,
+            !!order.challanDownloadedAt && order.challanNeedsResend,
+          )}
+        />
+        <DocumentRow
+          subtitle="Invoice"
+          send={customerDoc(
+            { type: "invoice" },
+            order.invoiceNo,
+            order.invoiceDate,
+            order.invoiceDownloadedAt,
+            false,
+          )}
+        />
+      </DocumentGroup>
     </section>
   );
 }
@@ -228,8 +329,8 @@ function DocumentGroup({
   children: ReactNode;
 }) {
   return (
-    <div className="px-4 pt-3 last:pb-1">
-      <h4 className="text-xs text-ink-muted">{title}</h4>
+    <div className="border-b border-border px-4 pt-3 last:border-b-0">
+      <h4 className="text-xs font-medium text-ink-muted">{title}</h4>
       <ul aria-label={label} className="flex flex-col divide-y divide-border">
         {children}
       </ul>
@@ -237,40 +338,174 @@ function DocumentGroup({
   );
 }
 
-// One document: its number, who it goes to and Preview. The PDF's file name
-// is named after the recipient (a Customer document after the Customer).
+// One document: state, number, who it goes to and when it was sent, then
+// Preview and the send button.
 function DocumentRow({
-  badge,
-  number,
-  recipient,
-  detail,
-  url,
-  fileNameRecipient = recipient,
+  subtitle,
+  send,
 }: {
-  badge: string;
-  number: string;
-  recipient: string;
-  detail?: string;
-  url: string;
-  fileNameRecipient?: string;
+  // The Supplier for a Work Order, else the document's name.
+  subtitle: string;
+  send: SendDocumentProps;
 }) {
+  const state = send.needsResend ? "resend" : send.sentAt ? "sent" : "pending";
   return (
-    <li className="flex items-center gap-3 py-3">
-      <span className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md bg-canvas px-1 text-xs font-semibold text-navy">
-        {badge}
-      </span>
+    <li
+      aria-label={`${send.number} · ${subtitle}`}
+      className="flex items-center gap-3 py-3"
+    >
+      <StateIcon state={state} />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-ink">
-          <span className="num">{number}</span> · {recipient}
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <span className="font-medium text-ink num">{send.number}</span>
+          <span className="truncate text-ink-muted">{subtitle}</span>
+          {send.needsResend && <NeedsResendBadge />}
         </p>
-        {detail && <p className="text-xs text-ink-muted num">{detail}</p>}
+        <p className="mt-0.5 text-xs text-ink-muted num">
+          {send.sentAt
+            ? `Sent ${send.sentAt}${send.storedDate ? ` · dated ${formatDate(send.storedDate)}` : ""}`
+            : "Not sent"}
+        </p>
       </div>
-      <DocumentPreview
-        url={url}
-        fileName={fileName(number, fileNameRecipient)}
-      />
+      <DocumentPreview url={send.url} fileName={send.fileName} />
+      <SendDocument {...send} />
     </li>
   );
+}
+
+// A sent Work Order whose Supplier has no items left (SPEC §6.2).
+function CancelledWorkOrder({ wo }: { wo: OrderView["workOrders"][number] }) {
+  return (
+    <li
+      aria-label={`${wo.woNo} · ${wo.supplierName}`}
+      className="flex items-start gap-3 py-3"
+    >
+      <StateIcon state="cancelled" />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm text-ink-subtle line-through">
+          <span className="num">{wo.woNo}</span> · {wo.supplierName}
+        </p>
+        {wo.cancelAcknowledgedAt ? (
+          <p className="text-xs text-ink-subtle">Cancelled · supplier told</p>
+        ) : (
+          <p className="mt-1 text-sm text-danger">
+            Tell {wo.supplierName} that {wo.woNo} is cancelled.
+          </p>
+        )}
+      </div>
+    </li>
+  );
+}
+
+// DESIGN §7b state icons, 24px.
+function StateIcon({
+  state,
+}: {
+  state: "pending" | "sent" | "resend" | "cancelled";
+}) {
+  const circle =
+    "flex size-6 shrink-0 items-center justify-center rounded-full";
+  if (state === "sent")
+    return (
+      <span
+        role="img"
+        aria-label="Sent"
+        className={cn(circle, "bg-success text-white")}
+      >
+        <Check className="size-3.5" strokeWidth={2.5} />
+      </span>
+    );
+  if (state === "resend")
+    return (
+      <span
+        role="img"
+        aria-label="Needs re-send"
+        className={cn(circle, "border border-warning text-warning")}
+      >
+        <RefreshCw className="size-3.5" strokeWidth={1.75} />
+      </span>
+    );
+  if (state === "cancelled")
+    return (
+      <span
+        role="img"
+        aria-label="Cancelled"
+        className={cn(circle, "bg-canvas text-ink-subtle")}
+      >
+        <X className="size-3.5" strokeWidth={1.75} />
+      </span>
+    );
+  return (
+    <Circle
+      role="img"
+      aria-label="Not sent"
+      className="size-6 shrink-0 text-border-strong"
+      strokeWidth={1.25}
+    />
+  );
+}
+
+// This Order's status and document history, for every role (SPEC §6.4).
+function OrderHistory({ entries }: { entries: OrderHistoryEntry[] }) {
+  return (
+    <section aria-labelledby="history" className="flex flex-col gap-3">
+      <h3 id="history" className="section-label">
+        History
+      </h3>
+      {entries.length ? (
+        <ol className="flex flex-col divide-y divide-border rounded-xl border border-border bg-surface">
+          {entries.map((entry) => (
+            <li
+              key={entry.id}
+              className="flex flex-col gap-0.5 px-4 py-3 sm:flex-row sm:items-baseline sm:gap-4"
+            >
+              <p className="flex-1 text-sm text-ink">{historyLine(entry)}</p>
+              <p className="text-xs text-ink-muted num">
+                {entry.userName ?? "System"} ·{" "}
+                {formatDateTime(entry.occurredAt)}
+              </p>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="text-sm text-ink-muted">
+          Nothing sent yet. Sending a document is recorded here.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function historyLine({
+  action,
+  entityType,
+  entityLabel,
+  details,
+}: OrderHistoryEntry): string {
+  const text = (key: string) =>
+    typeof details[key] === "string" ? (details[key] as string) : "";
+  const date = (key: string) => (text(key) ? formatDate(text(key)) : "");
+  const via = text("source") === "manual" ? "" : " (automatic)";
+  switch (action) {
+    case "document_download":
+      return `Downloaded ${entityLabel}, dated ${date("date")}`;
+    case "document_share":
+      return `Shared ${entityLabel}, dated ${date("date")}`;
+    case "document_date_change":
+      return `Changed the date of ${entityLabel} from ${date("from")} to ${date("to")}`;
+    case "status_change":
+      if (entityType === "work_orders")
+        return `${entityLabel} marked ${WO_STATUS_LABEL[text("to") as keyof typeof WO_STATUS_LABEL] ?? text("to")}`;
+      return `Status ${ORDER_STATUS_LABEL[text("from") as OrderStatus] ?? text("from")} → ${ORDER_STATUS_LABEL[text("to") as OrderStatus] ?? text("to")}${via}`;
+    case "lock":
+      return "Order locked: Invoice sent";
+    case "unlock":
+      return `Order unlocked${text("reason") && `: ${text("reason")}`}`;
+    case "cancel":
+      return `Order cancelled${text("reason") && `: ${text("reason")}`}`;
+    case "restore":
+      return "Order restored";
+  }
 }
 
 function Amount({ label, children }: { label?: string; children: ReactNode }) {

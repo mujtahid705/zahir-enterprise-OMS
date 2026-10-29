@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm";
 import { db, type Db, type Tx } from "@/db/client";
 import {
+  activityLog,
   companySettings,
   customers,
   numberSequences,
@@ -23,6 +24,7 @@ import {
   workOrders,
 } from "@/db/schema";
 import { withUser } from "@/db/with-user";
+import type { EventAction } from "@/lib/activity";
 import type { CurrentUser } from "@/lib/auth";
 import { todayInDhaka } from "@/lib/dates";
 import { UserInputError } from "@/lib/errors";
@@ -263,11 +265,18 @@ async function get(
   id: string,
   { executor = db }: Deps = {},
 ) {
-  const [order] = await executor
-    .select()
+  // WhatsApp numbers are the live ones, for "Open WhatsApp chat" (SPEC
+  // §8.4); nothing printed uses them.
+  const [found] = await executor
+    .select({ order: ordersTable, customerWhatsapp: customers.whatsapp })
     .from(ordersTable)
+    .innerJoin(customers, eq(customers.id, ordersTable.customerId))
     .where(eq(ordersTable.id, id));
-  if (!order) return undefined;
+  if (!found) return undefined;
+  const order = {
+    ...found.order,
+    customerWhatsapp: found.customerWhatsapp ?? found.order.customerPhone,
+  };
   const [items, wos] = await Promise.all([
     executor
       .select()
@@ -275,10 +284,17 @@ async function get(
       .where(eq(orderItems.orderId, id))
       .orderBy(asc(orderItems.sortOrder)),
     executor
-      .select()
+      .select({ wo: workOrders, supplierWhatsapp: suppliers.whatsapp })
       .from(workOrders)
+      .innerJoin(suppliers, eq(suppliers.id, workOrders.supplierId))
       .where(eq(workOrders.orderId, id))
-      .orderBy(asc(workOrders.letter)),
+      .orderBy(asc(workOrders.letter))
+      .then((rows) =>
+        rows.map(({ wo, supplierWhatsapp }) => ({
+          ...wo,
+          supplierWhatsapp: supplierWhatsapp ?? wo.supplierPhone,
+        })),
+      ),
   ]);
   const lines = items.map((item) => ({
     ...item,
@@ -424,10 +440,58 @@ async function list(
   };
 }
 
+// What the Order page's history shows every role (SPEC §6.4): status and
+// document events, not the field diffs (those are Admin-only, SPEC §11).
+const HISTORY_ACTIONS = [
+  "status_change",
+  "document_download",
+  "document_share",
+  "document_date_change",
+  "lock",
+  "unlock",
+  "cancel",
+  "restore",
+] as const satisfies readonly EventAction[];
+
+async function history(
+  _actor: CurrentUser,
+  id: string,
+  { executor = db }: Deps = {},
+) {
+  const rows = await executor
+    .select({
+      id: activityLog.id,
+      occurredAt: activityLog.occurredAt,
+      action: activityLog.action,
+      userName: activityLog.userName,
+      entityType: activityLog.entityType,
+      entityLabel: activityLog.entityLabel,
+      details: activityLog.details,
+    })
+    .from(activityLog)
+    .where(
+      and(
+        eq(activityLog.orderId, id),
+        eq(activityLog.kind, "event"),
+        inArray(activityLog.action, HISTORY_ACTIONS),
+      ),
+    )
+    // One send's events share a time; the id keeps them in order.
+    .orderBy(desc(activityLog.occurredAt), desc(activityLog.id));
+  return rows.map((row) => ({
+    ...row,
+    action: row.action as (typeof HISTORY_ACTIONS)[number],
+    details: (row.details ?? {}) as Record<string, unknown>,
+  }));
+}
+
+export type OrderHistoryEntry = Awaited<ReturnType<typeof history>>[number];
+
 export const orders = {
   customerOptions,
   productOptions,
   create,
   get,
   list,
+  history,
 };

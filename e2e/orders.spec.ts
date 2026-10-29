@@ -83,8 +83,12 @@ test("Phase 3: a two-Supplier Order makes two Work Orders, and Staff see no Marg
   const number = (await orderNo.textContent())!.slice("ORD-".length);
   const workOrders = page.getByRole("list", { name: "Work Orders" });
   await expect(workOrders.getByRole("listitem")).toHaveCount(2);
-  await expect(workOrders).toContainText(`WO-${number}-A · ${suzinas}`);
-  await expect(workOrders).toContainText(`WO-${number}-B · ${rahim}`);
+  await expect(
+    workOrders.getByRole("listitem", { name: `WO-${number}-A · ${suzinas}` }),
+  ).toBeVisible();
+  await expect(
+    workOrders.getByRole("listitem", { name: `WO-${number}-B · ${rahim}` }),
+  ).toBeVisible();
   const totals = page.getByRole("definition");
   await expect(totals.getByText("Tk 28,500.00", { exact: true })).toBeVisible();
   await expect(totals.getByText("Tk 22,000.00", { exact: true })).toBeVisible();
