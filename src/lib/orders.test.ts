@@ -6,6 +6,7 @@ import {
   orderTotals,
   specText,
   splitWorkOrders,
+  statusTargets,
   woProgress,
 } from "@/lib/orders";
 
@@ -138,5 +139,37 @@ describe("woProgress", () => {
     expect(woProgress({ sent: 2, total: 3 })).toBe("WO 2/3");
     expect(woProgress({ sent: 0, total: 2 })).toBeNull();
     expect(woProgress({ sent: 2, total: 2 })).toBeNull();
+  });
+});
+
+describe("statusTargets", () => {
+  it("offers Staff only later steps, never Completed", () => {
+    expect(statusTargets("staff", "created")).toEqual([
+      "wo_sent",
+      "delivered",
+      "invoiced",
+    ]);
+    expect(statusTargets("staff", "delivered")).toEqual(["invoiced"]);
+    expect(statusTargets("staff", "invoiced")).toEqual([]);
+  });
+
+  it("offers Admins and Managers every other step, back or forward", () => {
+    expect(statusTargets("manager", "delivered")).toEqual([
+      "created",
+      "wo_sent",
+      "invoiced",
+      "completed",
+    ]);
+    expect(statusTargets("admin", "completed")).toEqual([
+      "created",
+      "wo_sent",
+      "delivered",
+      "invoiced",
+    ]);
+  });
+
+  it("offers nothing on a cancelled Order: it is restored instead", () => {
+    expect(statusTargets("admin", "cancelled")).toEqual([]);
+    expect(statusTargets("staff", "cancelled")).toEqual([]);
   });
 });
