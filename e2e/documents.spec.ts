@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { addCustomer, addProduct, addSupplier } from "./support/master-data";
+import { addOrder } from "./support/orders";
 import { signInAs } from "./support/session";
 import { E2E_USERS, e2ePassword } from "./support/users";
 
@@ -25,25 +26,7 @@ test("each document previews as a PDF without marking anything sent", async ({
     buy: "2.00",
   });
 
-  await page.goto("/orders/new");
-  await page
-    .getByRole("searchbox", { name: "Search customers" })
-    .fill(customer);
-  await page.getByRole("button", { name: new RegExp(customer) }).click();
-  await page.getByRole("button", { name: "Add product" }).click();
-  await page
-    .getByRole("dialog", { name: "Add product" })
-    .getByRole("button", { name: new RegExp(product) })
-    .click();
-  const qty = page.getByRole("dialog", { name: product });
-  await qty.getByRole("button", { name: "5,000", exact: true }).click();
-  await qty.getByRole("button", { name: "Add to order" }).click();
-  await page.getByRole("button", { name: "Review", exact: true }).click();
-  await page.getByRole("button", { name: "Save order" }).click();
-
-  const orderNo = page.getByRole("heading", { name: /^ORD-\d{4}-\d{4,}$/ });
-  await expect(orderNo).toBeVisible();
-  const number = (await orderNo.textContent())!.slice("ORD-".length);
+  const number = await addOrder(page, customer, [product]);
   const slug = (name: string) => name.replace(/\s+/g, "-");
 
   // Staff may preview every document too.

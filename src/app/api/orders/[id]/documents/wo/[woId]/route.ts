@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { documentResponse } from "../../pdf-response";
+import { documentResponse, sendResponse } from "../../pdf-response";
 
 export async function GET(
   request: NextRequest,
@@ -10,4 +10,12 @@ export async function GET(
     type: "work_order",
     workOrderId: woId,
   });
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: RouteContext<"/api/orders/[id]/documents/wo/[woId]">,
+) {
+  const { id, woId } = await params;
+  return sendResponse(request, id, { type: "work_order", workOrderId: woId });
 }

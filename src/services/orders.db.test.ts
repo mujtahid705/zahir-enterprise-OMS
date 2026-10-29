@@ -240,7 +240,15 @@ describe("snapshot", () => {
         { executor: tx },
       );
 
-      expect(await orders.get(admin, id, { executor: tx })).toEqual(before);
+      // Only the WhatsApp number for "Open WhatsApp chat" is the live one
+      // (SPEC §8.4); nothing printed uses it.
+      expect(await orders.get(admin, id, { executor: tx })).toEqual({
+        ...before,
+        workOrders: before!.workOrders.map((wo) => ({
+          ...wo,
+          supplierWhatsapp: "01888888888",
+        })),
+      });
     },
   );
 });
