@@ -4,7 +4,6 @@ import { Plus } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import {
   NeedsResendBadge,
-  ORDER_STATUS_LABEL,
   StatusPill,
   WoProgressBadge,
 } from "@/components/orders/status-pill";
@@ -18,6 +17,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { formatDate } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
 import {
+  ORDER_STATUS_LABEL,
   ORDER_STATUSES,
   orderListFilters,
   orderListHref,

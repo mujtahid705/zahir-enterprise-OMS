@@ -8,6 +8,11 @@ import { DeactivatedBadge } from "@/components/deactivated-badge";
 import { EmptyState } from "@/components/empty-state";
 import { Pager } from "@/components/pager";
 import { ProductsTable } from "@/components/products/products-table";
+import {
+  RecordHistory,
+  RecordTabs,
+  historyTab,
+} from "@/components/activity/record-history";
 import { RecordActions } from "@/components/record-actions";
 import { RoleGate } from "@/components/role-gate";
 import { TopBar } from "@/components/shell/top-bar";
@@ -250,6 +255,7 @@ export function PartyDetailPage({
 }
 
 const TABS = ["details", "products"] as const;
+type Tab = (typeof TABS)[number] | "history";
 
 async function PartyDetail({
   kind,
@@ -262,11 +268,19 @@ async function PartyDetail({
 }) {
   const { label, plural, path } = PARTY[kind];
   const { actor, record } = await loadRecord(kind, params);
-  const tab = z
-    .enum(TABS)
-    .catch("details")
-    .parse((await searchParams).tab);
-  const tabHref = (value: (typeof TABS)[number]) =>
+  const query = await searchParams;
+  const history = historyTab(actor, query, `${path}/${record.id}`);
+  const tab: Tab = history.open
+    ? "history"
+    : z.enum(TABS).catch("details").parse(query.tab);
+  const tabs: { value: Tab; label: string }[] = [
+    { value: "details", label: "Details" },
+    { value: "products", label: "Products" },
+    ...(history.allowed
+      ? [{ value: "history" as const, label: "History" }]
+      : []),
+  ];
+  const tabHref = (value: Tab) =>
     `${path}/${record.id}${value === "details" ? "" : `?tab=${value}`}`;
 
   return (
@@ -280,31 +294,21 @@ async function PartyDetail({
         </h2>
       </div>
 
-      <nav
-        aria-label={`${label} sections`}
-        className="flex gap-6 border-b border-border text-sm"
-      >
-        {TABS.map((value) => (
-          <Link
-            key={value}
-            href={tabHref(value)}
-            aria-current={value === tab ? "page" : undefined}
-            className={cn(
-              "-mb-px border-b-2 pb-2 capitalize",
-              value === tab
-                ? "border-navy font-medium text-navy"
-                : "border-transparent text-ink-muted hover:text-navy",
-            )}
-          >
-            {value}
-          </Link>
-        ))}
-      </nav>
+      <RecordTabs label={label} tabs={tabs} current={tab} href={tabHref} />
 
-      {tab === "details" ? (
+      {tab === "details" && (
         <PartyDetails kind={kind} actor={actor} record={record} />
-      ) : (
+      )}
+      {tab === "products" && (
         <PartyProducts kind={kind} actor={actor} record={record} />
+      )}
+      {tab === "history" && (
+        <RecordHistory
+          actor={actor}
+          scope={{ entityType: `${kind}s`, entityId: record.id }}
+          page={history.page}
+          pageHref={history.pageHref}
+        />
       )}
     </section>
   );

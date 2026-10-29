@@ -1,15 +1,5 @@
-import type { OrderStatus } from "@/lib/orders";
+import { ORDER_STATUS_LABEL, type OrderStatus } from "@/lib/orders";
 import { cn } from "@/lib/utils";
-
-// SPEC §6.1 labels.
-export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
-  created: "Created",
-  wo_sent: "WO Sent",
-  delivered: "Delivered",
-  invoiced: "Invoiced",
-  completed: "Completed",
-  cancelled: "Cancelled",
-};
 
 const TONE: Record<OrderStatus, string> = {
   created: "bg-(--status-created-bg) text-(--status-created-fg)",
