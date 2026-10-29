@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { and, eq, type SQL } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import type { Tx } from "@/db/client";
@@ -924,43 +925,6 @@ describe("update", () => {
   );
 
   dbTest(
-    "refuses an Order once a Work Order or the Challan has gone out",
-    async (tx) => {
-      const staff = await seedActor(tx, "staff");
-      const c = await seedCatalogue(tx);
-      const woSent = await orders.create(staff, bagOrder(c), { executor: tx });
-      const challanSent = await orders.create(staff, bagOrder(c), {
-        executor: tx,
-      });
-      await withUser(
-        staff,
-        async (sp) => {
-          await sp
-            .update(workOrders)
-            .set({ status: "sent", sentAt: new Date() })
-            .where(eq(workOrders.orderId, woSent.id));
-          await sp
-            .update(ordersTable)
-            .set({ challanDownloadedAt: new Date() })
-            .where(eq(ordersTable.id, challanSent.id));
-        },
-        tx,
-      );
-
-      for (const { id } of [woSent, challanSent]) {
-        const loaded = await orders.get(staff, id, { executor: tx });
-        await expect(
-          orders.update(staff, id, editOf(loaded!), { executor: tx }),
-        ).rejects.toThrow(
-          new UserInputError(
-            "Documents have been sent for this order, so it can't be edited here.",
-          ),
-        );
-      }
-    },
-  );
-
-  dbTest(
     "keeps a line whose Product was deactivated, but won't add it back once removed",
     async (tx) => {
       const admin = await seedActor(tx, "admin");
@@ -1066,6 +1030,382 @@ describe("update", () => {
   );
 });
 
+// Marks documents of an Order as gone out, as documents.send would.
+async function markSent(
+  tx: Tx,
+  actor: CurrentUser,
+  orderId: string,
+  {
+    letters = [] as string[],
+    challan = false,
+    status,
+    isLocked,
+  }: {
+    letters?: string[];
+    challan?: boolean;
+    status?: "wo_sent" | "delivered" | "invoiced";
+    isLocked?: boolean;
+  },
+) {
+  await withUser(
+    actor,
+    async (sp) => {
+      for (const letter of letters)
+        await sp
+          .update(workOrders)
+          .set({ status: "sent", sentAt: new Date(), woDate: "2026-10-21" })
+          .where(
+            and(eq(workOrders.orderId, orderId), eq(workOrders.letter, letter)),
+          );
+      const set = {
+        ...(challan && { challanDownloadedAt: new Date() }),
+        ...(status && { status }),
+        ...(isLocked !== undefined && { isLocked }),
+      };
+      if (Object.keys(set).length)
+        await sp
+          .update(ordersTable)
+          .set(set)
+          .where(eq(ordersTable.id, orderId));
+    },
+    tx,
+  );
+}
+
+const eventsOf = (tx: Tx, orderId: string) =>
+  tx
+    .select({
+      action: activityLog.action,
+      entityType: activityLog.entityType,
+      entityLabel: activityLog.entityLabel,
+      userName: activityLog.userName,
+      details: activityLog.details,
+    })
+    .from(activityLog)
+    .where(and(eq(activityLog.orderId, orderId), eq(activityLog.kind, "event")))
+    .orderBy(activityLog.id);
+
+describe("update after sending", () => {
+  // Bread and sweet boxes from Suzinas (WO-A), carry bags from Rahim
+  // Plastics (WO-B).
+  const threeLines = (c: Awaited<ReturnType<typeof seedCatalogue>>) => ({
+    ...bagOrder(c),
+    items: [
+      { productId: c.bread.id, quantity: 5000 },
+      { productId: c.carryBag.id, quantity: 2000 },
+      { productId: c.sweetBox.id, quantity: 1000 },
+    ],
+  });
+
+  dbTest(
+    "flags the sent Work Order and Challan that no longer match, and leaves the rest",
+    async (tx) => {
+      const staff = await seedActor(tx, "staff");
+      const c = await seedCatalogue(tx);
+      const { id } = await orders.create(staff, threeLines(c), {
+        executor: tx,
+      });
+      await markSent(tx, staff, id, {
+        letters: ["A", "B"],
+        challan: true,
+        status: "delivered",
+      });
+      const loaded = editOf((await orders.get(staff, id, { executor: tx }))!);
+
+      await orders.update(
+        staff,
+        id,
+        {
+          ...loaded,
+          items: loaded.items.map((item) =>
+            item.productId === c.sweetBox.id
+              ? { ...item, quantity: 1200 }
+              : item,
+          ),
+        },
+        { executor: tx },
+      );
+
+      const order = await orders.get(staff, id, { executor: tx });
+      expect(order).toMatchObject({
+        status: "delivered",
+        challanNeedsResend: true,
+      });
+      expect(
+        order?.workOrders.map(({ letter, status, needsResend }) => ({
+          letter,
+          status,
+          needsResend,
+        })),
+      ).toEqual([
+        { letter: "A", status: "sent", needsResend: true },
+        { letter: "B", status: "sent", needsResend: false },
+      ]);
+    },
+  );
+
+  dbTest(
+    "cancels a sent Work Order whose Supplier has no items left, never deleting it, and logs it",
+    async (tx) => {
+      const staff = await seedActor(tx, "staff");
+      const c = await seedCatalogue(tx);
+      const { id, orderNo } = await orders.create(staff, threeLines(c), {
+        executor: tx,
+      });
+      const number = orderNo.slice("ORD-".length);
+      await markSent(tx, staff, id, { letters: ["A", "B"], status: "wo_sent" });
+      const loaded = editOf((await orders.get(staff, id, { executor: tx }))!);
+
+      await orders.update(
+        staff,
+        id,
+        {
+          ...loaded,
+          items: loaded.items.filter(
+            (item) => item.productId !== c.carryBag.id,
+          ),
+        },
+        { executor: tx },
+      );
+
+      const order = await orders.get(staff, id, { executor: tx });
+      expect(order?.status).toBe("wo_sent");
+      expect(order?.workOrders).toMatchObject([
+        { letter: "A", status: "sent", needsResend: false },
+        {
+          letter: "B",
+          status: "cancelled",
+          needsResend: false,
+          itemCount: 0,
+          cancelAcknowledgedAt: null,
+        },
+      ]);
+      expect(order?.workOrders[1]?.cancelledAt).toBeInstanceOf(Date);
+      expect(await eventsOf(tx, id)).toEqual([
+        {
+          action: "status_change",
+          entityType: "work_orders",
+          entityLabel: `WO-${number}-B`,
+          userName: "Test staff",
+          details: { from: "sent", to: "cancelled", source: "auto" },
+        },
+      ]);
+
+      // Carry bags come back: a new Work Order with the next letter.
+      const again = editOf(order!);
+      await orders.update(
+        staff,
+        id,
+        {
+          ...again,
+          items: [...again.items, { productId: c.carryBag.id, quantity: 300 }],
+        },
+        { executor: tx },
+      );
+      expect(
+        (await orders.get(staff, id, { executor: tx }))?.workOrders,
+      ).toMatchObject([
+        { letter: "A", status: "sent" },
+        { letter: "B", status: "cancelled" },
+        { letter: "C", status: "pending", supplierId: c.rahim.id },
+      ]);
+    },
+  );
+
+  dbTest(
+    "keeps the status when a new Supplier joins after WO Sent, and counts its pending Work Order",
+    async (tx) => {
+      const staff = await seedActor(tx, "staff");
+      const c = await seedCatalogue(tx);
+      const { id } = await orders.create(
+        staff,
+        { ...bagOrder(c), items: [{ productId: c.bread.id, quantity: 100 }] },
+        { executor: tx },
+      );
+      await markSent(tx, staff, id, { letters: ["A"], status: "wo_sent" });
+      const loaded = editOf((await orders.get(staff, id, { executor: tx }))!);
+
+      await orders.update(
+        staff,
+        id,
+        {
+          ...loaded,
+          items: [...loaded.items, { productId: c.carryBag.id, quantity: 50 }],
+        },
+        { executor: tx },
+      );
+
+      const order = await orders.get(staff, id, { executor: tx });
+      expect(order).toMatchObject({ status: "wo_sent" });
+      expect(order?.workOrders).toMatchObject([
+        { letter: "A", status: "sent", needsResend: false },
+        { letter: "B", status: "pending" },
+      ]);
+      const { rows } = await orders.list(
+        staff,
+        { customerId: c.highwaySweets.id },
+        { executor: tx },
+      );
+      expect(rows[0]).toMatchObject({
+        status: "wo_sent",
+        workOrders: { sent: 1, total: 2 },
+      });
+    },
+  );
+
+  dbTest(
+    "moves to WO Sent when the only pending Work Order is deleted",
+    async (tx) => {
+      const staff = await seedActor(tx, "staff");
+      const c = await seedCatalogue(tx);
+      const { id } = await orders.create(staff, threeLines(c), {
+        executor: tx,
+      });
+      await markSent(tx, staff, id, { letters: ["A"] });
+      const loaded = editOf((await orders.get(staff, id, { executor: tx }))!);
+
+      await orders.update(
+        staff,
+        id,
+        {
+          ...loaded,
+          items: loaded.items.filter(
+            (item) => item.productId !== c.carryBag.id,
+          ),
+        },
+        { executor: tx },
+      );
+
+      const order = await orders.get(staff, id, { executor: tx });
+      expect(order?.status).toBe("wo_sent");
+      expect(order?.workOrders).toMatchObject([{ letter: "A" }]);
+      expect(await eventsOf(tx, id)).toMatchObject([
+        {
+          action: "status_change",
+          entityType: "orders",
+          details: { from: "created", to: "wo_sent", source: "auto" },
+        },
+      ]);
+    },
+  );
+
+  dbTest(
+    "refuses a locked or cancelled Order, header and dates included",
+    async (tx) => {
+      const admin = await seedActor(tx, "admin");
+      const c = await seedCatalogue(tx);
+      const locked = await orders.create(admin, bagOrder(c), {
+        executor: tx,
+      });
+      await markSent(tx, admin, locked.id, {
+        letters: ["A"],
+        challan: true,
+        status: "invoiced",
+        isLocked: true,
+      });
+      const cancelled = await orders.create(admin, bagOrder(c), {
+        executor: tx,
+      });
+      await withUser(
+        admin,
+        (sp) =>
+          sp
+            .update(ordersTable)
+            .set({ status: "cancelled" })
+            .where(eq(ordersTable.id, cancelled.id)),
+        tx,
+      );
+
+      for (const [{ id }, message] of [
+        [locked, "This order is locked."],
+        [cancelled, "This order is cancelled."],
+      ] as const) {
+        const loaded = editOf((await orders.get(admin, id, { executor: tx }))!);
+        await expect(
+          orders.update(
+            admin,
+            id,
+            { ...loaded, orderDate: "2026-10-19" },
+            { executor: tx },
+          ),
+        ).rejects.toThrow(new UserInputError(message));
+        await expect(
+          orders.refreshPrices(
+            admin,
+            id,
+            { updatedAt: loaded.updatedAt },
+            { executor: tx },
+          ),
+        ).rejects.toThrow(new UserInputError(message));
+      }
+    },
+  );
+});
+
+describe("acknowledgeCancel", () => {
+  dbTest("records who told the Supplier and when, and logs it", async (tx) => {
+    const staff = await seedActor(tx, "staff");
+    const c = await seedCatalogue(tx);
+    const { id, orderNo } = await orders.create(
+      staff,
+      {
+        ...bagOrder(c),
+        items: [
+          { productId: c.bread.id, quantity: 100 },
+          { productId: c.carryBag.id, quantity: 100 },
+        ],
+      },
+      { executor: tx },
+    );
+    await markSent(tx, staff, id, { letters: ["A", "B"], status: "wo_sent" });
+    const loaded = editOf((await orders.get(staff, id, { executor: tx }))!);
+    await orders.update(
+      staff,
+      id,
+      { ...loaded, items: [loaded.items[0]!] },
+      { executor: tx },
+    );
+    const [woA, woB] = (await orders.get(staff, id, { executor: tx }))!
+      .workOrders;
+
+    // Only a cancelled Work Order of this Order can be acknowledged.
+    await expect(
+      orders.acknowledgeCancel(staff, id, woA!.id, { executor: tx }),
+    ).rejects.toThrow(new UserInputError(`${woA!.woNo} is not cancelled.`));
+    expect(
+      await orders.acknowledgeCancel(staff, randomUUID(), woB!.id, {
+        executor: tx,
+      }),
+    ).toBeUndefined();
+
+    await orders.acknowledgeCancel(staff, id, woB!.id, { executor: tx });
+
+    const wo = (await orders.get(staff, id, { executor: tx }))!.workOrders[1]!;
+    expect(wo).toMatchObject({
+      status: "cancelled",
+      cancelAcknowledgedBy: staff.id,
+    });
+    expect(wo.cancelAcknowledgedAt).toBeInstanceOf(Date);
+    expect((await eventsOf(tx, id)).at(-1)).toEqual({
+      action: "cancel_acknowledged",
+      entityType: "work_orders",
+      entityLabel: `WO-${orderNo.slice("ORD-".length)}-B`,
+      userName: "Test staff",
+      details: { supplier: "Rahim Plastics" },
+    });
+    expect(
+      (await orders.history(staff, id, { executor: tx }))[0],
+    ).toMatchObject({ action: "cancel_acknowledged" });
+
+    // Done twice is refused, so it's logged once.
+    await expect(
+      orders.acknowledgeCancel(staff, id, woB!.id, { executor: tx }),
+    ).rejects.toThrow(
+      new UserInputError(`Already recorded that Rahim Plastics was told.`),
+    );
+  });
+});
+
 describe("refreshPrices", () => {
   dbTest(
     "re-copies each line's prices from its Product but never its Supplier",
@@ -1124,6 +1464,56 @@ describe("refreshPrices", () => {
       await expect(
         orders.refreshPrices(manager, id, token, { executor: tx }),
       ).rejects.toThrow(/^This order was changed by Test manager at /);
+    },
+  );
+
+  dbTest(
+    "flags a sent Work Order whose Buy prices change, not the Challan",
+    async (tx) => {
+      const manager = await seedActor(tx, "manager");
+      const c = await seedCatalogue(tx);
+      const { id } = await orders.create(
+        manager,
+        {
+          ...bagOrder(c),
+          items: [
+            { productId: c.bread.id, quantity: 100 },
+            { productId: c.carryBag.id, quantity: 200 },
+          ],
+        },
+        { executor: tx },
+      );
+      await markSent(tx, manager, id, {
+        letters: ["A", "B"],
+        challan: true,
+        status: "delivered",
+      });
+      await products.update(
+        manager,
+        c.carryBag.id,
+        {
+          supplierId: c.rahim.id,
+          name: "Carry bag large",
+          sellPrice: "4.50",
+          buyPrice: "3.20",
+        },
+        { executor: tx },
+      );
+      const loaded = await orders.get(manager, id, { executor: tx });
+
+      await orders.refreshPrices(
+        manager,
+        id,
+        { updatedAt: loaded!.updatedAt?.toISOString() ?? null },
+        { executor: tx },
+      );
+
+      const order = await orders.get(manager, id, { executor: tx });
+      expect(order?.challanNeedsResend).toBe(false);
+      expect(order?.workOrders.map((wo) => wo.needsResend)).toEqual([
+        false,
+        true,
+      ]);
     },
   );
 });

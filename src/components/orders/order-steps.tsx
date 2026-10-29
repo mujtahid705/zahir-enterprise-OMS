@@ -9,6 +9,7 @@ import {
   Plus,
   Search,
   Trash2,
+  TriangleAlert,
 } from "lucide-react";
 import {
   createOrderAction,
@@ -32,7 +33,16 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type { FormState } from "@/lib/form-state";
 import { formatMoney, formatPieces } from "@/lib/money";
-import { LETTERS, lineTotal, orderTotals, splitWorkOrders } from "@/lib/orders";
+import {
+  LETTERS,
+  editEffects,
+  editWarnings,
+  lineTotal,
+  orderTotals,
+  splitWorkOrders,
+  type PrintedOrder,
+  type WorkOrderStatus,
+} from "@/lib/orders";
 import { priceSchema } from "@/lib/products";
 import { cn } from "@/lib/utils";
 import type { CustomerOption, ProductOption } from "@/services/orders";
@@ -87,7 +97,34 @@ export type OrderEdit = {
   // Review step shows the letters saving will give (SPEC §7).
   letters: Record<string, string>;
   lettersUsed: number;
+  // What went out, so saving can warn first what no longer matches (SPEC
+  // §5.5).
+  workOrders: {
+    supplierId: string;
+    woNo: string;
+    supplierName: string;
+    status: WorkOrderStatus;
+  }[];
+  challanSent: boolean;
 };
+
+// What the documents print of the form's Order (SPEC §8.1).
+const printed = (
+  details: Details,
+  lines: readonly Line[],
+  customerAddress: string,
+): PrintedOrder => ({
+  deliveryDate: details.deliveryDate,
+  customerRef: details.customerRef.trim(),
+  deliveryAddress: details.deliveryAddress.trim() || customerAddress,
+  lines: lines.map((line) => ({
+    supplierId: line.supplierId,
+    productName: line.name,
+    specText: line.specText,
+    quantity: line.quantity,
+    buyPrice: line.buyPrice,
+  })),
+});
 
 const lineFrom = (product: ProductOption): Line => ({
   ...product,
@@ -150,6 +187,7 @@ export function OrderSteps({
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Line | null>(null);
   const [switchTo, setSwitchTo] = useState<CustomerOption | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [state, setState] = useState<FormState>();
   const [loading, startLoading] = useTransition();
   const [saving, startSaving] = useTransition();
@@ -183,6 +221,22 @@ export function OrderSteps({
         ? current.map((l) => (l.id === line.id ? line : l))
         : [...current, line],
     );
+
+  // Sent documents this edit makes stale, confirmed before saving.
+  const confirmSave = () => {
+    const stale = edit
+      ? editWarnings(
+          editEffects({
+            before: printed(edit.details, edit.lines, edit.customer.address),
+            after: printed(details, lines, edit.customer.address),
+            workOrders: edit.workOrders,
+            challanSent: edit.challanSent,
+          }),
+        )
+      : [];
+    if (stale.length) setWarnings(stale);
+    else save();
+  };
 
   const save = () =>
     startSaving(async () => {
@@ -490,6 +544,42 @@ export function OrderSteps({
         </AlertDialog.Portal>
       </AlertDialog.Root>
 
+      <AlertDialog.Root
+        open={warnings.length > 0}
+        onOpenChange={(open) => !open && setWarnings([])}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className="fixed inset-0 z-50 bg-navy/40" />
+          <AlertDialog.Content className="fixed top-1/2 left-1/2 z-50 flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-xl bg-surface p-6 shadow-overlay">
+            <AlertDialog.Title className="text-lg font-semibold text-navy">
+              Save changes to sent documents?
+            </AlertDialog.Title>
+            <AlertDialog.Description className="text-sm text-ink-muted">
+              Documents already sent no longer match this order.
+            </AlertDialog.Description>
+            <ul
+              aria-label="Warnings"
+              className="flex flex-col gap-1.5 rounded-lg bg-(--status-invoiced-bg) px-3 py-2.5 text-sm text-warning"
+            >
+              {warnings.map((warning) => (
+                <li key={warning} className="flex gap-2">
+                  <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+                  {warning}
+                </li>
+              ))}
+            </ul>
+            <div className="flex justify-end gap-2">
+              <AlertDialog.Cancel asChild>
+                <Button variant="outline">Cancel</Button>
+              </AlertDialog.Cancel>
+              <AlertDialog.Action asChild>
+                <Button onClick={save}>Save changes</Button>
+              </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+
       {step > 0 && (
         <div className="fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 border-t border-border bg-surface md:bottom-0 md:left-[72px] xl:left-[248px]">
           <div className="mx-auto flex max-w-xl items-center gap-3 px-4 py-3 md:px-0">
@@ -523,7 +613,7 @@ export function OrderSteps({
                 Review <ChevronRight strokeWidth={1.5} />
               </Button>
             ) : (
-              <Button disabled={saving} onClick={save}>
+              <Button disabled={saving} onClick={confirmSave}>
                 {saving ? "Saving…" : edit ? "Save changes" : "Save order"}
               </Button>
             )}

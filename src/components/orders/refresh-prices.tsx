@@ -27,7 +27,7 @@ export function RefreshPrices({
       <ConfirmDialog
         formId={formId}
         title="Refresh prices from products?"
-        description="Every line takes its Product's current sell and buy price, replacing any price changed on the line. Suppliers stay as they are."
+        description="Every line takes its Product's current sell and buy price, replacing any price changed on the line. Suppliers stay as they are; a sent Work Order whose buy prices change will need re-sending."
         confirmLabel="Refresh prices"
         trigger={
           <Button type="button" variant="secondary" disabled={pending}>

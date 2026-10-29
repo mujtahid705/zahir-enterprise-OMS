@@ -226,23 +226,125 @@ export function woProgress({
   return sent > 0 && sent < total ? `WO ${sent}/${total}` : null;
 }
 
-// Why an Order can't be edited yet, or null if it can (SPEC §5.5). Editing
-// is free until the first document goes out: a sent Work Order or the
-// Challan.
-export function editBlock(
-  order: {
-    status: OrderStatus;
-    isLocked: boolean;
-    challanDownloadedAt: Date | null;
-  },
-  workOrders: readonly { status: "pending" | "sent" | "cancelled" }[],
-): string | null {
+// Why an Order can't be edited, or null if it can (SPEC §5.5). Sent
+// documents don't stop an edit: editEffects says what it makes stale. A
+// locked Order (Invoice sent) keeps its header and document dates too.
+export function editBlock(order: {
+  status: OrderStatus;
+  isLocked: boolean;
+}): string | null {
   if (order.status === "cancelled") return "This order is cancelled.";
   if (order.isLocked) return "This order is locked.";
-  if (
-    order.challanDownloadedAt ||
-    workOrders.some((wo) => wo.status !== "pending")
-  )
-    return "Documents have been sent for this order, so it can't be edited here.";
   return null;
+}
+
+// What the Work Orders and the Challan print of an Order (SPEC §8.1): the
+// rest of a document never changes with an edit.
+export type PrintedLine = {
+  supplierId: string;
+  productName: string;
+  specText: string;
+  quantity: number;
+  buyPrice: string;
+};
+
+export type PrintedOrder = {
+  deliveryDate: string | null;
+  customerRef: string | null;
+  deliveryAddress: string;
+  lines: readonly PrintedLine[];
+};
+
+// SPEC §6.2; mirrors the wo_status enum (SPEC §14).
+export type WorkOrderStatus = "pending" | "sent" | "cancelled";
+
+type EditedWorkOrder = { supplierId: string; status: WorkOrderStatus };
+
+export type EditEffects<W> = {
+  // Sent Work Orders that no longer match: Needs re-send.
+  resend: W[];
+  // Sent Work Orders whose Supplier has no lines left (SPEC §6.2).
+  cancelled: W[];
+  // Pending ones in the same spot, simply deleted.
+  deleted: W[];
+  // The Challan was sent and no longer matches.
+  challan: boolean;
+};
+
+// What an edit does to the documents already made (SPEC §5.5, §6.2). A
+// Work Order prints its Supplier's lines with Buy prices and the required-by
+// date; the Challan prints every line without prices, the reference and the
+// delivery address. The Invoice is never sent before the Order locks.
+export function editEffects<W extends EditedWorkOrder>({
+  before,
+  after,
+  workOrders,
+  challanSent,
+}: {
+  before: PrintedOrder;
+  after: PrintedOrder;
+  workOrders: readonly W[];
+  challanSent: boolean;
+}): EditEffects<W> {
+  const workOrderPrint = (order: PrintedOrder, supplierId: string) =>
+    JSON.stringify([
+      order.deliveryDate || null,
+      order.lines
+        .filter((line) => line.supplierId === supplierId)
+        .map((line) => [
+          line.productName,
+          line.specText,
+          line.quantity,
+          paisa(line.buyPrice),
+        ]),
+    ]);
+  const challanPrint = (order: PrintedOrder) =>
+    JSON.stringify([
+      order.customerRef || null,
+      order.deliveryAddress,
+      order.lines.map((line) => [
+        line.productName,
+        line.specText,
+        line.quantity,
+      ]),
+    ]);
+  const supplied = new Set(after.lines.map((line) => line.supplierId));
+  const effects: EditEffects<W> = {
+    resend: [],
+    cancelled: [],
+    deleted: [],
+    challan: challanSent && challanPrint(before) !== challanPrint(after),
+  };
+  for (const wo of workOrders) {
+    if (wo.status === "cancelled") continue;
+    if (!supplied.has(wo.supplierId))
+      (wo.status === "sent" ? effects.cancelled : effects.deleted).push(wo);
+    else if (
+      wo.status === "sent" &&
+      workOrderPrint(before, wo.supplierId) !==
+        workOrderPrint(after, wo.supplierId)
+    )
+      effects.resend.push(wo);
+  }
+  return effects;
+}
+
+// The warning shown before saving (SPEC §5.5): every sent document the
+// edit makes stale. Deleting a pending Work Order needs no warning.
+export function editWarnings(
+  effects: EditEffects<{ woNo: string; supplierName: string }>,
+): string[] {
+  return [
+    ...effects.resend.map(
+      (wo) =>
+        `${wo.woNo} to ${wo.supplierName} no longer matches and will need re-sending.`,
+    ),
+    ...effects.cancelled.map(
+      (wo) =>
+        `${wo.woNo} to ${wo.supplierName} will be cancelled: ${wo.supplierName} has no items left.`,
+    ),
+    ...(effects.challan
+      ? ["The Challan no longer matches and will need re-sending."]
+      : []),
+  ];
 }

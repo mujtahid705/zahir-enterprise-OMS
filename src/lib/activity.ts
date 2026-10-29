@@ -13,6 +13,8 @@ export type EventAction =
   | "unlock"
   | "cancel"
   | "restore"
+  // A cancelled Work Order's Supplier was told (SPEC §6.2).
+  | "cancel_acknowledged"
   | "login"
   | "login_failed"
   | "logout"

@@ -26,7 +26,7 @@ import {
   workOrders,
 } from "@/db/schema";
 import { withUser } from "@/db/with-user";
-import type { EventAction } from "@/lib/activity";
+import { logEvent, type EventAction } from "@/lib/activity";
 import type { CurrentUser } from "@/lib/auth";
 import { formatDateTime, todayInDhaka } from "@/lib/dates";
 import { UserInputError } from "@/lib/errors";
@@ -34,16 +34,20 @@ import { orderNumbers, workOrderNo } from "@/lib/numbering";
 import {
   LETTERS,
   editBlock,
+  editEffects,
   orderEditSchema,
   orderSchema,
   orderTotals,
   specText,
   splitWorkOrders,
+  type EditEffects,
   type OrderEditInput,
   type OrderInput,
   type OrderListFilters,
+  type PrintedLine,
 } from "@/lib/orders";
 import { can } from "@/lib/permissions";
+import { forward } from "@/lib/sending";
 import {
   MASTER_DATA_PAGE_SIZE,
   authorize,
@@ -479,6 +483,7 @@ const HISTORY_ACTIONS = [
   "unlock",
   "cancel",
   "restore",
+  "cancel_acknowledged",
 ] as const satisfies readonly EventAction[];
 
 async function history(
@@ -516,9 +521,9 @@ async function history(
 export type OrderHistoryEntry = Awaited<ReturnType<typeof history>>[number];
 
 // Locks the Order for an edit and checks it may be edited (SPEC §5.5): still
-// as the form loaded it, then still before any document went out. The row
-// lock queues a concurrent edit or send behind this one. Undefined if the
-// Order doesn't exist.
+// as the form loaded it, and not locked or cancelled. The row lock queues a
+// concurrent edit or send behind this one. Undefined if the Order doesn't
+// exist.
 async function lockForEdit(tx: Tx, id: string, updatedAt: string | null) {
   const [order] = await tx
     .select()
@@ -531,7 +536,7 @@ async function lockForEdit(tx: Tx, id: string, updatedAt: string | null) {
     .select()
     .from(workOrders)
     .where(eq(workOrders.orderId, id));
-  const blocked = editBlock(order, wos);
+  const blocked = editBlock(order);
   if (blocked) throw new UserInputError(blocked);
   return { order, wos };
 }
@@ -555,10 +560,83 @@ export async function assertUnchanged(
   );
 }
 
+type WorkOrderRow = typeof workOrders.$inferSelect;
+
+// An automatic status change of an Order or Work Order (SPEC §6.4).
+const statusChanged = (
+  tx: Tx,
+  actor: CurrentUser,
+  orderId: string,
+  entity: { type: "orders" | "work_orders"; id: string; label: string },
+  from: string,
+  to: string,
+) =>
+  logEvent(
+    {
+      action: "status_change",
+      user: { id: actor.id, name: actor.name },
+      entity,
+      orderId,
+      details: { from, to, source: "auto" },
+    },
+    tx,
+  );
+
+// Applies what an edit does to the Work Orders already made (SPEC §5.5,
+// §6.2): a pending one left without lines is deleted, a sent one cancelled
+// (logged), and a sent one that no longer matches gets Needs re-send.
+async function applyEffects(
+  tx: Tx,
+  actor: CurrentUser,
+  orderId: string,
+  effects: EditEffects<WorkOrderRow>,
+) {
+  const ids = (wos: readonly WorkOrderRow[]) => wos.map((wo) => wo.id);
+  if (effects.deleted.length)
+    await tx
+      .delete(workOrders)
+      .where(inArray(workOrders.id, ids(effects.deleted)));
+  if (effects.cancelled.length)
+    await tx
+      .update(workOrders)
+      .set({
+        status: "cancelled",
+        needsResend: false,
+        cancelledAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(inArray(workOrders.id, ids(effects.cancelled)));
+  if (effects.resend.length)
+    await tx
+      .update(workOrders)
+      .set({ needsResend: true, updatedAt: new Date() })
+      .where(inArray(workOrders.id, ids(effects.resend)));
+  for (const wo of effects.cancelled)
+    await statusChanged(
+      tx,
+      actor,
+      orderId,
+      { type: "work_orders", id: wo.id, label: wo.woNo },
+      "sent",
+      "cancelled",
+    );
+}
+
+// What a saved line prints on the documents (SPEC §8.1).
+const printedLine = (item: typeof orderItems.$inferSelect): PrintedLine => ({
+  supplierId: item.supplierId,
+  productName: item.productName,
+  specText: item.specText,
+  quantity: item.quantity,
+  buyPrice: item.buyPrice,
+});
+
 // Saves an edit (SPEC §5.3, §5.5) in one transaction. Lines already on the
-// Order keep their snapshot; new ones are copied from their Product. A
-// Supplier left with no lines loses its pending Work Order, a new one gets the
-// next unused letter. Undefined if the Order doesn't exist.
+// Order keep their snapshot; new ones are copied from their Product. Sent
+// documents that no longer match are flagged, a Supplier left with no lines
+// loses its Work Order (applyEffects), a new one gets the next unused letter
+// and never moves the status back (SPEC §6.1). Undefined if the Order
+// doesn't exist.
 async function update(
   actor: CurrentUser,
   id: string,
@@ -578,7 +656,8 @@ async function update(
       const current = await tx
         .select()
         .from(orderItems)
-        .where(eq(orderItems.orderId, id));
+        .where(eq(orderItems.orderId, id))
+        .orderBy(asc(orderItems.sortOrder));
 
       const kept = new Map(current.map((item) => [item.id, item]));
       const offered = new Map(
@@ -619,18 +698,41 @@ async function update(
           ),
         );
 
-      const groups = splitWorkOrders(lines);
-      const needed = new Set(groups.map((group) => group.supplierId));
-      const open = wos.filter((wo) => wo.status !== "cancelled");
-      const dropped = open.filter((wo) => !needed.has(wo.supplierId));
-      if (dropped.length)
-        await tx.delete(workOrders).where(
-          inArray(
-            workOrders.id,
-            dropped.map((wo) => wo.id),
-          ),
-        );
+      const deliveryAddress = values.deliveryAddress ?? order.customerAddress;
+      const effects = editEffects({
+        before: { ...order, lines: current.map(printedLine) },
+        after: {
+          deliveryDate: values.deliveryDate,
+          customerRef: values.customerRef,
+          deliveryAddress,
+          lines: lines.map(({ existing, product, ...line }) => ({
+            supplierId: line.supplierId,
+            quantity: line.quantity,
+            ...(existing
+              ? {
+                  productName: existing.productName,
+                  specText: existing.specText,
+                  buyPrice: line.buyPrice ?? existing.buyPrice,
+                }
+              : {
+                  productName: product.name,
+                  specText: specText(product),
+                  buyPrice: line.buyPrice ?? product.buyPrice,
+                }),
+          })),
+        },
+        workOrders: wos,
+        challanSent: !!order.challanDownloadedAt,
+      });
+      await applyEffects(tx, actor, id, effects);
 
+      const groups = splitWorkOrders(lines);
+      const gone = new Set(
+        [...effects.deleted, ...effects.cancelled].map((wo) => wo.id),
+      );
+      const open = wos.filter(
+        (wo) => wo.status !== "cancelled" && !gone.has(wo.id),
+      );
       const woFor = new Map(open.map((wo) => [wo.supplierId, wo.id]));
       const added = groups.filter((group) => !woFor.has(group.supplierId));
       let lettersUsed = order.woLettersUsed;
@@ -706,20 +808,37 @@ async function update(
             .where(eq(orderItems.id, item!.id));
       }
 
+      // Deleting the last pending Work Order leaves every one sent (SPEC
+      // §6.1); only forward, so a new pending one never moves it back.
+      const status =
+        !added.length && open.length && open.every((wo) => wo.status === "sent")
+          ? forward(order.status, "wo_sent")
+          : order.status;
       await tx
         .update(ordersTable)
         .set({
           orderDate: values.orderDate,
           deliveryDate: values.deliveryDate,
           customerRef: values.customerRef,
-          deliveryAddress: values.deliveryAddress ?? order.customerAddress,
+          deliveryAddress,
           notes: values.notes,
           invoiceNote: values.invoiceNote,
           woLettersUsed: lettersUsed,
+          status,
+          ...(effects.challan && { challanNeedsResend: true }),
           updatedAt: new Date(),
           updatedBy: actor.id,
         })
         .where(eq(ordersTable.id, id));
+      if (status !== order.status)
+        await statusChanged(
+          tx,
+          actor,
+          id,
+          { type: "orders", id, label: order.orderNo },
+          order.status,
+          status,
+        );
       return { id };
     },
     executor,
@@ -730,8 +849,9 @@ const refreshSchema = z.object({ updatedAt: orderEditSchema.shape.updatedAt });
 
 // "Refresh prices from products" (SPEC §5.3, Admin/Manager): re-copies each
 // line's sell and buy price from its Product, overrides included. The line's
-// Supplier never changes. Same lock rules as an edit. Undefined if the Order
-// doesn't exist.
+// Supplier never changes. Same lock rules as an edit, and a sent Work Order
+// whose Buy prices change gets Needs re-send (the Challan prints no prices).
+// Undefined if the Order doesn't exist.
 async function refreshPrices(
   actor: CurrentUser,
   id: string,
@@ -743,7 +863,33 @@ async function refreshPrices(
   return withUser(
     actor,
     async (tx) => {
-      if (!(await lockForEdit(tx, id, updatedAt))) return undefined;
+      const locked = await lockForEdit(tx, id, updatedAt);
+      if (!locked) return undefined;
+      const { order, wos } = locked;
+      const current = await tx
+        .select({ item: orderItems, buyPrice: products.buyPrice })
+        .from(orderItems)
+        .innerJoin(products, eq(products.id, orderItems.productId))
+        .where(eq(orderItems.orderId, id))
+        .orderBy(asc(orderItems.sortOrder));
+      const before = current.map(({ item }) => printedLine(item));
+      await applyEffects(
+        tx,
+        actor,
+        id,
+        editEffects({
+          before: { ...order, lines: before },
+          after: {
+            ...order,
+            lines: current.map(({ item, buyPrice }) => ({
+              ...printedLine(item),
+              buyPrice,
+            })),
+          },
+          workOrders: wos,
+          challanSent: !!order.challanDownloadedAt,
+        }),
+      );
 
       await tx
         .update(orderItems)
@@ -769,7 +915,58 @@ async function refreshPrices(
   );
 }
 
+// "Done" on a cancelled Work Order (SPEC §6.2): records that its Supplier
+// was told, and logs it. Undefined if the Order has no such Work Order.
+async function acknowledgeCancel(
+  actor: CurrentUser,
+  orderId: string,
+  workOrderId: string,
+  { executor = db }: Deps = {},
+): Promise<{ id: string } | undefined> {
+  authorize(actor, "shareDocuments");
+  return withUser(
+    actor,
+    async (tx) => {
+      const [wo] = await tx
+        .select()
+        .from(workOrders)
+        .where(
+          and(eq(workOrders.id, workOrderId), eq(workOrders.orderId, orderId)),
+        )
+        .for("update");
+      if (!wo) return undefined;
+      if (wo.status !== "cancelled")
+        throw new UserInputError(`${wo.woNo} is not cancelled.`);
+      if (wo.cancelAcknowledgedAt)
+        throw new UserInputError(
+          `Already recorded that ${wo.supplierName} was told.`,
+        );
+      await tx
+        .update(workOrders)
+        .set({
+          cancelAcknowledgedAt: new Date(),
+          cancelAcknowledgedBy: actor.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(workOrders.id, wo.id));
+      await logEvent(
+        {
+          action: "cancel_acknowledged",
+          user: { id: actor.id, name: actor.name },
+          entity: { type: "work_orders", id: wo.id, label: wo.woNo },
+          orderId,
+          details: { supplier: wo.supplierName },
+        },
+        tx,
+      );
+      return { id: wo.id };
+    },
+    executor,
+  );
+}
+
 export const orders = {
+  acknowledgeCancel,
   customerOptions,
   productOptions,
   create,

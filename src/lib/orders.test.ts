@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  editEffects,
+  editWarnings,
   lineTotal,
   orderListFilters,
   orderListHref,
   orderTotals,
   specText,
+  type PrintedOrder,
   splitWorkOrders,
   statusTargets,
   woProgress,
@@ -139,6 +142,161 @@ describe("woProgress", () => {
     expect(woProgress({ sent: 2, total: 3 })).toBe("WO 2/3");
     expect(woProgress({ sent: 0, total: 2 })).toBeNull();
     expect(woProgress({ sent: 2, total: 2 })).toBeNull();
+  });
+});
+// SPEC §5.4's example Order: two lines from Suzinas (WO-A), one from Rahim
+// Plastics (WO-B), both Work Orders sent.
+describe("editEffects", () => {
+  const bread = {
+    supplierId: "suzinas",
+    productName: "Bread poly packet",
+    specText: "10×14 in",
+    quantity: 5000,
+    buyPrice: "2.00",
+  };
+  const box = {
+    supplierId: "suzinas",
+    productName: "Sweet box 1 kg",
+    specText: "",
+    quantity: 1000,
+    buyPrice: "6.00",
+  };
+  const bag = {
+    supplierId: "rahim",
+    productName: "Carry bag large",
+    specText: "",
+    quantity: 2000,
+    buyPrice: "3.00",
+  };
+  type WoStatus = "pending" | "sent" | "cancelled";
+  const before: PrintedOrder = {
+    deliveryDate: "2026-10-25",
+    customerRef: "PO-77",
+    deliveryAddress: "12 Station Road, Dhaka",
+    lines: [bread, box, bag],
+  };
+  const woA = {
+    id: "a",
+    supplierId: "suzinas",
+    woNo: "WO-2026-0012-A",
+    supplierName: "Suzinas",
+    status: "sent" as WoStatus,
+  };
+  const woB = {
+    id: "b",
+    supplierId: "rahim",
+    woNo: "WO-2026-0012-B",
+    supplierName: "Rahim Plastics",
+    status: "sent" as WoStatus,
+  };
+  const effects = (
+    after: Partial<typeof before>,
+    { workOrders = [woA, woB], challanSent = true } = {},
+  ) =>
+    editEffects({
+      before,
+      after: { ...before, ...after },
+      workOrders,
+      challanSent,
+    });
+
+  it("changes nothing when what the documents print is the same", () => {
+    expect(
+      effects({ lines: [{ ...bread }, { ...box, buyPrice: "6" }, bag] }),
+    ).toEqual({ resend: [], cancelled: [], deleted: [], challan: false });
+  });
+
+  it("flags only the sent Work Order whose lines changed, and the sent Challan", () => {
+    expect(
+      effects({ lines: [{ ...bread, quantity: 6000 }, box, bag] }),
+    ).toEqual({ resend: [woA], cancelled: [], deleted: [], challan: true });
+  });
+
+  it("flags a Work Order, not the Challan, for a Buy price change", () => {
+    expect(
+      effects({ lines: [bread, box, { ...bag, buyPrice: "3.20" }] }),
+    ).toEqual({ resend: [woB], cancelled: [], deleted: [], challan: false });
+  });
+
+  it("flags every sent Work Order when the required-by date changes", () => {
+    expect(effects({ deliveryDate: null })).toEqual({
+      resend: [woA, woB],
+      cancelled: [],
+      deleted: [],
+      challan: false,
+    });
+  });
+
+  it("flags the Challan for its reference, delivery address or line order", () => {
+    for (const after of [
+      { customerRef: "PO-78" },
+      { deliveryAddress: "Gate 2, Station Road" },
+      { lines: [bread, bag, box] },
+    ])
+      expect(effects(after)).toMatchObject({ resend: [], challan: true });
+  });
+
+  it("never flags documents that were not sent", () => {
+    const pending = { ...woA, status: "pending" as const };
+    expect(
+      effects(
+        { lines: [{ ...bread, quantity: 1 }, box, bag] },
+        { workOrders: [pending, woB], challanSent: false },
+      ),
+    ).toEqual({ resend: [], cancelled: [], deleted: [], challan: false });
+  });
+
+  it("cancels a sent Work Order whose Supplier has no lines left, and deletes a pending one", () => {
+    expect(effects({ lines: [bag] })).toEqual({
+      resend: [],
+      cancelled: [woA],
+      deleted: [],
+      challan: true,
+    });
+    const pendingB = { ...woB, status: "pending" as const };
+    expect(
+      effects({ lines: [bread, box] }, { workOrders: [woA, pendingB] }),
+    ).toEqual({
+      resend: [],
+      cancelled: [],
+      deleted: [pendingB],
+      challan: true,
+    });
+  });
+
+  it("leaves an already cancelled Work Order alone", () => {
+    const cancelled = { ...woB, status: "cancelled" as const };
+    expect(
+      effects({ lines: [bread, box] }, { workOrders: [woA, cancelled] }),
+    ).toMatchObject({ cancelled: [], deleted: [] });
+  });
+});
+
+describe("editWarnings", () => {
+  const wo = (letter: string, supplierName: string) => ({
+    woNo: `WO-2026-0012-${letter}`,
+    supplierName,
+  });
+
+  it("lists what no longer matches what was sent", () => {
+    expect(
+      editWarnings({
+        resend: [wo("A", "Suzinas")],
+        cancelled: [wo("B", "Rahim Plastics")],
+        deleted: [wo("C", "Plastech")],
+        challan: true,
+      }),
+    ).toEqual([
+      "WO-2026-0012-A to Suzinas no longer matches and will need re-sending.",
+      "WO-2026-0012-B to Rahim Plastics will be cancelled: Rahim Plastics has no items left.",
+      "The Challan no longer matches and will need re-sending.",
+    ]);
+  });
+
+  it("is empty when nothing sent is affected", () => {
+    expect(
+      editWarnings({ resend: [], cancelled: [], deleted: [], challan: false }),
+    ).toEqual([]);
   });
 });
 

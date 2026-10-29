@@ -98,6 +98,21 @@ export async function refreshOrderPricesAction(
   return state;
 }
 
+// "Done" on a cancelled Work Order: its Supplier was told (SPEC §6.2).
+export async function acknowledgeCancelAction(
+  orderId: string,
+  workOrderId: string,
+): Promise<FormState> {
+  const actor = await requireRole(...PERMISSIONS.shareDocuments);
+  let found = true;
+  const state = await formAction(async () => {
+    found = !!(await orders.acknowledgeCancel(actor, orderId, workOrderId));
+  });
+  if (!found) return GONE;
+  refresh();
+  return state;
+}
+
 // The Order page's status controls (SPEC §5.5, §6.4). `updatedAt` is the
 // Order as the page loaded it; a stale page comes back as the form's error.
 async function statusAction(

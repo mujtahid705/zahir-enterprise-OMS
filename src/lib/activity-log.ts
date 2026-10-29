@@ -74,7 +74,14 @@ export const ACTION_TYPES = {
   deleted: { label: "Deleted", actions: ["delete"] },
   status: {
     label: "Status and locking",
-    actions: ["status_change", "lock", "unlock", "cancel", "restore"],
+    actions: [
+      "status_change",
+      "lock",
+      "unlock",
+      "cancel",
+      "restore",
+      "cancel_acknowledged",
+    ],
   },
   documents: {
     label: "Documents",
@@ -105,6 +112,7 @@ const ACTION_LABEL: Record<string, string> = {
   unlock: "Unlocked",
   cancel: "Cancelled",
   restore: "Restored",
+  cancel_acknowledged: "Supplier told",
   login: "Signed in",
   login_failed: "Sign-in failed",
   logout: "Signed out",
@@ -327,6 +335,8 @@ export function eventLine({
       return `Order cancelled${reason}`;
     case "restore":
       return `Order restored to ${status("to")}`;
+    case "cancel_acknowledged":
+      return `Told ${get("supplier")} that ${entityLabel} is cancelled`;
     case "login":
       return "Signed in";
     case "login_failed":

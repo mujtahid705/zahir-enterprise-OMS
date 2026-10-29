@@ -75,6 +75,8 @@ function editOf(order: OrderView, products: OrderEdit["products"]): OrderEdit {
         .map((wo) => [wo.supplierId, wo.letter]),
     ),
     lettersUsed: order.woLettersUsed,
+    workOrders: order.workOrders,
+    challanSent: !!order.challanDownloadedAt,
   };
 }
 
@@ -89,7 +91,7 @@ async function EditOrder({
   const order = await orders.get(actor, id);
   if (!order) notFound();
 
-  const blocked = editBlock(order, order.workOrders);
+  const blocked = editBlock(order);
   if (blocked)
     return (
       <div className="mx-auto flex max-w-xl flex-col gap-4">
