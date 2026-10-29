@@ -597,6 +597,7 @@ activity_kind:   data | event
 | challan_date, invoice_date | date | document dates (§8.0) |
 | challan_downloaded_at, invoice_downloaded_at | timestamptz | first download/share |
 | challan_needs_resend | boolean default false | |
+| wo_letters_used | int not null default 0 | WO letters handed out so far, deleted WOs included, so a letter is never reused (§7) |
 | completed_at, cancelled_at | timestamptz | |
 | created_by, updated_by | uuid → profiles | |
 

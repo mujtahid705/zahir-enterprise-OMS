@@ -1,9 +1,19 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense, type ReactNode } from "react";
-import { Check, ChevronLeft, Circle, Lock, RefreshCw, X } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  Circle,
+  Lock,
+  Pencil,
+  RefreshCw,
+  X,
+} from "lucide-react";
 import { z } from "zod";
+import { DeactivatedBadge } from "@/components/deactivated-badge";
 import { DocumentPreview } from "@/components/orders/document-preview";
+import { RefreshPrices } from "@/components/orders/refresh-prices";
 import {
   SendDocument,
   SendToast,
@@ -16,11 +26,13 @@ import {
   WoProgressBadge,
 } from "@/components/orders/status-pill";
 import { TopBar } from "@/components/shell/top-bar";
+import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth";
 import { formatDate, formatDateTime, todayInDhaka } from "@/lib/dates";
 import { fileName, type DocumentRef } from "@/lib/documents";
 import { formatMoney, formatPieces } from "@/lib/money";
-import { woProgress, type OrderStatus } from "@/lib/orders";
+import { editBlock, woProgress, type OrderStatus } from "@/lib/orders";
+import { can } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import {
   orders,
@@ -77,6 +89,8 @@ async function OrderDetail({ params }: { params: IdParams }) {
   const supplierOf = new Map(
     order.workOrders.map((wo) => [wo.supplierId, wo.supplierName]),
   );
+  // Free edit until the first document goes out (SPEC §5.5).
+  const editable = !editBlock(order, order.workOrders);
   const details: [string, string | null][] = [
     ["Customer reference", order.customerRef],
     ["Delivery address", order.deliveryAddress],
@@ -114,6 +128,9 @@ async function OrderDetail({ params }: { params: IdParams }) {
             {order.customerName}
           </Link>
           <span className="text-ink-muted"> · {order.customerPhone}</span>
+          {order.customerDeactivated && (
+            <DeactivatedBadge className="ml-2 align-middle" />
+          )}
         </p>
         <p className="mt-1 text-sm text-ink-muted">
           Ordered {formatDate(order.orderDate)}
@@ -126,6 +143,22 @@ async function OrderDetail({ params }: { params: IdParams }) {
             Invoice sent, so this order is locked. Documents can still be
             downloaded.
           </p>
+        )}
+        {editable && (
+          <div className="mt-4 flex flex-wrap items-start gap-2">
+            <Button asChild>
+              <Link href={`/orders/${order.id}/edit`}>
+                <Pencil strokeWidth={1.5} />
+                Edit order
+              </Link>
+            </Button>
+            {can(actor.role, "overridePrices") && (
+              <RefreshPrices
+                orderId={order.id}
+                updatedAt={order.updatedAt?.toISOString() ?? null}
+              />
+            )}
+          </div>
         )}
       </div>
 
@@ -176,7 +209,12 @@ async function OrderDetail({ params }: { params: IdParams }) {
                   className="flex flex-col gap-0.5 border-b border-border px-4 py-3 last:border-b-0 md:table-row md:p-0"
                 >
                   <td className="md:px-4 md:py-3">
-                    <p className="font-medium text-ink">{item.productName}</p>
+                    <p className="font-medium text-ink">
+                      {item.productName}
+                      {item.deactivated && (
+                        <DeactivatedBadge className="ml-2 align-middle" />
+                      )}
+                    </p>
                     {item.specText && (
                       <p className="text-xs text-ink-muted">{item.specText}</p>
                     )}

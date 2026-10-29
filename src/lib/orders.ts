@@ -4,7 +4,7 @@ import { priceSchema } from "@/lib/products";
 
 // Orders (SPEC §5): pure rules shared by the order form and the service.
 
-const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+export const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 // Money is worked in paisa so sums of numeric(12,2) strings don't drift.
 const paisa = (amount: string) => Math.round(Number(amount) * 100);
@@ -115,6 +115,15 @@ export const orderSchema = z.object({
 
 export type OrderInput = z.input<typeof orderSchema>;
 
+// What the edit form saves (SPEC §5.5). The Customer stays; a line already on
+// the Order keeps its snapshot, so its prices are sent only when changed.
+// `updatedAt` is the Order's as the form loaded it, null if never edited.
+export const orderEditSchema = orderSchema.omit({ customerId: true }).extend({
+  updatedAt: z.iso.datetime({ offset: true }).nullable(),
+});
+
+export type OrderEditInput = z.input<typeof orderEditSchema>;
+
 // SPEC §6.1, in flow order; mirrors the order_status enum (SPEC §14).
 export const ORDER_STATUSES = [
   "created",
@@ -186,4 +195,25 @@ export function woProgress({
   total: number;
 }): string | null {
   return sent > 0 && sent < total ? `WO ${sent}/${total}` : null;
+}
+
+// Why an Order can't be edited yet, or null if it can (SPEC §5.5). Editing
+// is free until the first document goes out: a sent Work Order or the
+// Challan.
+export function editBlock(
+  order: {
+    status: OrderStatus;
+    isLocked: boolean;
+    challanDownloadedAt: Date | null;
+  },
+  workOrders: readonly { status: "pending" | "sent" | "cancelled" }[],
+): string | null {
+  if (order.status === "cancelled") return "This order is cancelled.";
+  if (order.isLocked) return "This order is locked.";
+  if (
+    order.challanDownloadedAt ||
+    workOrders.some((wo) => wo.status !== "pending")
+  )
+    return "Documents have been sent for this order, so it can't be edited here.";
+  return null;
 }

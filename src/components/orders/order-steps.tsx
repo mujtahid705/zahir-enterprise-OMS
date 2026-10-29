@@ -10,7 +10,12 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { createOrderAction, orderProductsAction } from "@/actions/orders";
+import {
+  createOrderAction,
+  orderProductsAction,
+  updateOrderAction,
+} from "@/actions/orders";
+import { DeactivatedBadge } from "@/components/deactivated-badge";
 import { FormNotice } from "@/components/form-notice";
 import { OrderProductForm } from "@/components/orders/order-product-form";
 import type { Option as SupplierOption } from "@/components/products/product-form";
@@ -27,7 +32,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import type { FormState } from "@/lib/form-state";
 import { formatMoney, formatPieces } from "@/lib/money";
-import { lineTotal, orderTotals, splitWorkOrders } from "@/lib/orders";
+import { LETTERS, lineTotal, orderTotals, splitWorkOrders } from "@/lib/orders";
 import { priceSchema } from "@/lib/products";
 import { cn } from "@/lib/utils";
 import type { CustomerOption, ProductOption } from "@/services/orders";
@@ -35,23 +40,27 @@ import type { CustomerOption, ProductOption } from "@/services/orders";
 // The order form, "Steps" (DESIGN.md §7a, SPEC §5.2): Customer → Items →
 // Review, one decision per screen. Prices shown here are the Products'
 // current ones; the service copies them again when it saves, except prices
-// an Admin/Manager changed on the line.
+// an Admin/Manager changed on the line. Editing an Order (SPEC §5.5) opens
+// on Items with its Customer fixed; its lines show their own snapshot.
 
 type Prices = Pick<ProductOption, "sellPrice" | "buyPrice">;
 
-// sellPrice/buyPrice are the line's own; `listed` keeps the Product's, so
-// only a changed price is sent as an override.
-type Line = ProductOption & {
+// sellPrice/buyPrice are the line's own; `listed` keeps the Product's (the
+// snapshot's, for a line already on an edited Order), so only a changed
+// price is sent as an override.
+export type Line = ProductOption & {
   quantity: number;
   supplierId: string;
   listed: Prices;
+  // Its Product, Customer or Supplier was deactivated since (SPEC §5.3).
+  deactivated?: boolean;
 };
 
 // The product picker and the New product form: 85% height (DESIGN §7a).
 const TALL_SHEET =
   "h-[85dvh] gap-3 rounded-t-xl pb-[calc(env(safe-area-inset-bottom)+16px)] sm:mx-auto sm:max-w-lg";
 
-type Details = {
+export type Details = {
   orderDate: string;
   deliveryDate: string;
   customerRef: string;
@@ -61,6 +70,21 @@ type Details = {
 };
 
 const STEPS = ["Customer", "Items", "Review"] as const;
+
+// An existing Order as the edit form opens it.
+export type OrderEdit = {
+  orderId: string;
+  // The optimistic-lock token (SPEC §5.5).
+  updatedAt: string | null;
+  customer: CustomerOption;
+  products: ProductOption[];
+  lines: Line[];
+  details: Details;
+  // Each open Work Order's letter, and how many letters are taken, so the
+  // Review step shows the letters saving will give (SPEC §7).
+  letters: Record<string, string>;
+  lettersUsed: number;
+};
 
 const lineFrom = (product: ProductOption): Line => ({
   ...product,
@@ -87,6 +111,7 @@ export function OrderSteps({
   seesMargin,
   overridesPrices,
   suppliers,
+  edit,
 }: {
   customers: CustomerOption[];
   today: string;
@@ -94,22 +119,30 @@ export function OrderSteps({
   overridesPrices: boolean;
   // Active Suppliers for "+ New product"; null for roles that can't add one.
   suppliers: SupplierOption[] | null;
+  // The Order being edited; a new one when left out.
+  edit?: OrderEdit;
 }) {
-  const [step, setStep] = useState(0);
-  const [customer, setCustomer] = useState<CustomerOption | null>(null);
+  const [step, setStep] = useState(edit ? 1 : 0);
+  const [customer, setCustomer] = useState<CustomerOption | null>(
+    edit?.customer ?? null,
+  );
   const [catalogue, setCatalogue] = useState<{
     customerId: string;
     products: ProductOption[];
-  } | null>(null);
-  const [lines, setLines] = useState<Line[]>([]);
-  const [details, setDetails] = useState<Details>({
-    orderDate: today,
-    deliveryDate: "",
-    customerRef: "",
-    deliveryAddress: "",
-    notes: "",
-    invoiceNote: "",
-  });
+  } | null>(
+    edit ? { customerId: edit.customer.id, products: edit.products } : null,
+  );
+  const [lines, setLines] = useState<Line[]>(edit?.lines ?? []);
+  const [details, setDetails] = useState<Details>(
+    edit?.details ?? {
+      orderDate: today,
+      deliveryDate: "",
+      customerRef: "",
+      deliveryAddress: "",
+      notes: "",
+      invoiceNote: "",
+    },
+  );
   const [picking, setPicking] = useState(false);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Line | null>(null);
@@ -151,26 +184,46 @@ export function OrderSteps({
   const save = () =>
     startSaving(async () => {
       if (!customer) return;
-      setState(
-        await createOrderAction({
-          customerId: customer.id,
-          ...details,
-          items: lines.map((line) => ({
-            productId: line.id,
-            quantity: line.quantity,
-            ...(line.sellPrice !== line.listed.sellPrice && {
-              sellPrice: line.sellPrice,
-            }),
-            ...(line.buyPrice !== line.listed.buyPrice && {
-              buyPrice: line.buyPrice,
-            }),
-          })),
+      const items = lines.map((line) => ({
+        productId: line.id,
+        quantity: line.quantity,
+        ...(line.sellPrice !== line.listed.sellPrice && {
+          sellPrice: line.sellPrice,
         }),
+        ...(line.buyPrice !== line.listed.buyPrice && {
+          buyPrice: line.buyPrice,
+        }),
+      }));
+      setState(
+        edit
+          ? await updateOrderAction(edit.orderId, {
+              updatedAt: edit.updatedAt,
+              ...details,
+              items,
+            })
+          : await createOrderAction({
+              customerId: customer.id,
+              ...details,
+              items,
+            }),
       );
     });
 
+  // An edited Order keeps its Customer.
   const reachable = (i: number) =>
-    i === 0 || (i === 1 && !!customer) || (i === 2 && lines.length > 0);
+    (i === 0 && !edit) ||
+    (i === 1 && !!customer) ||
+    (i === 2 && lines.length > 0);
+
+  // Open Work Orders keep their letter; a new Supplier takes the next unused
+  // one, as saving will (SPEC §7).
+  let nextLetter = edit?.lettersUsed ?? 0;
+  const workOrders = splitWorkOrders(lines).map((wo) => ({
+    ...wo,
+    letter: edit
+      ? (edit.letters[wo.supplierId] ?? LETTERS[nextLetter++]!)
+      : wo.letter,
+  }));
   const totals = totalsOf(lines);
 
   return (
@@ -226,7 +279,10 @@ export function OrderSteps({
 
         {step === 1 && customer && (
           <div className="flex flex-col gap-4">
-            <CustomerChip customer={customer} onChange={() => setStep(0)} />
+            <CustomerChip
+              customer={customer}
+              onChange={edit ? undefined : () => setStep(0)}
+            />
             {lines.length === 0 ? (
               <div className="rounded-xl border border-dashed border-border-strong bg-surface px-6 py-10 text-center">
                 <p className="text-ink-muted">No items yet.</p>
@@ -248,8 +304,9 @@ export function OrderSteps({
                         className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-canvas"
                       >
                         <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium text-ink">
-                            {line.name}
+                          <p className="flex items-center gap-2 font-medium text-ink">
+                            <span className="truncate">{line.name}</span>
+                            {line.deactivated && <DeactivatedBadge />}
                           </p>
                           <p className="truncate text-xs text-ink-muted">
                             {line.supplier.name}
@@ -283,11 +340,14 @@ export function OrderSteps({
 
         {step === 2 && customer && (
           <div className="flex flex-col gap-6">
-            <CustomerChip customer={customer} onChange={() => setStep(0)} />
+            <CustomerChip
+              customer={customer}
+              onChange={edit ? undefined : () => setStep(0)}
+            />
             <section className="flex flex-col gap-3">
               <h2 className="section-label">Work Orders to send</h2>
               <ul className="flex flex-col divide-y divide-border rounded-xl border border-border bg-surface">
-                {splitWorkOrders(lines).map((wo) => (
+                {workOrders.map((wo) => (
                   <li
                     key={wo.supplierId}
                     className="flex items-center gap-3 px-4 py-3"
@@ -460,7 +520,7 @@ export function OrderSteps({
               </Button>
             ) : (
               <Button disabled={saving} onClick={save}>
-                {saving ? "Saving…" : "Save order"}
+                {saving ? "Saving…" : edit ? "Save changes" : "Save order"}
               </Button>
             )}
           </div>
@@ -571,7 +631,8 @@ function CustomerChip({
   onChange,
 }: {
   customer: CustomerOption;
-  onChange: () => void;
+  // Left out when the Customer can't change.
+  onChange?: () => void;
 }) {
   return (
     <div className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3">
@@ -579,9 +640,11 @@ function CustomerChip({
         <p className="section-label">Customer</p>
         <p className="truncate font-medium text-ink">{customer.name}</p>
       </div>
-      <Button variant="link" className="px-0" onClick={onChange}>
-        Change
-      </Button>
+      {onChange && (
+        <Button variant="link" className="px-0" onClick={onChange}>
+          Change
+        </Button>
+      )}
     </div>
   );
 }

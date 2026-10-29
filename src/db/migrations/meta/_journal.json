@@ -64,6 +64,13 @@
       "when": 1792933294982,
       "tag": "0008_orders_activity_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793283522274,
+      "tag": "0009_order_wo_letters_used",
+      "breakpoints": true
     }
   ]
 }
