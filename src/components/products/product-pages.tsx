@@ -16,6 +16,12 @@ import {
   historyTab,
 } from "@/components/activity/record-history";
 import { RecordActions } from "@/components/record-actions";
+import { SearchForm, SearchSubmit } from "@/components/search-form";
+import {
+  DetailSkeleton,
+  FormSkeleton,
+  ListSkeleton,
+} from "@/components/skeletons";
 import { TopBar } from "@/components/shell/top-bar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,12 +50,18 @@ const STATUS_LABEL: Record<PartyStatus, string> = {
   all: "All",
 };
 
-function Page({ children }: { children: ReactNode }) {
+function Page({
+  fallback,
+  children,
+}: {
+  fallback: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <>
       <TopBar title="Products" />
       <main className="flex-1 p-4 md:p-8">
-        <Suspense>{children}</Suspense>
+        <Suspense fallback={fallback}>{children}</Suspense>
       </main>
     </>
   );
@@ -84,7 +96,7 @@ export function ProductListPage({
   searchParams: SearchParams;
 }) {
   return (
-    <Page>
+    <Page fallback={<ListSkeleton />}>
       <ProductList searchParams={searchParams} />
     </Page>
   );
@@ -135,10 +147,7 @@ async function ProductList({ searchParams }: { searchParams: SearchParams }) {
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <form
-          role="search"
-          className="grid w-full gap-2 sm:grid-cols-[1fr_1fr_1fr_auto] lg:max-w-3xl"
-        >
+        <SearchForm className="grid w-full gap-2 sm:grid-cols-[1fr_1fr_1fr_auto] lg:max-w-3xl">
           <Label htmlFor="q" className="sr-only">
             Search Products
           </Label>
@@ -182,10 +191,8 @@ async function ProductList({ searchParams }: { searchParams: SearchParams }) {
           {status !== "active" && (
             <input type="hidden" name="status" value={status} />
           )}
-          <Button type="submit" variant="outline">
-            Filter
-          </Button>
-        </form>
+          <SearchSubmit>Filter</SearchSubmit>
+        </SearchForm>
         {canEdit && (
           <Button asChild>
             <Link href="/products/new">
@@ -249,7 +256,7 @@ export function ProductDetailPage({
   searchParams: SearchParams;
 }) {
   return (
-    <Page>
+    <Page fallback={<DetailSkeleton />}>
       <ProductDetail params={params} searchParams={searchParams} />
     </Page>
   );
@@ -419,7 +426,7 @@ export function NewProductPage({
   searchParams: SearchParams;
 }) {
   return (
-    <Page>
+    <Page fallback={<FormSkeleton />}>
       <NewProduct searchParams={searchParams} />
     </Page>
   );
@@ -458,7 +465,7 @@ async function NewProduct({ searchParams }: { searchParams: SearchParams }) {
 
 export function EditProductPage({ params }: { params: IdParams }) {
   return (
-    <Page>
+    <Page fallback={<FormSkeleton />}>
       <EditProduct params={params} />
     </Page>
   );
@@ -496,7 +503,7 @@ async function EditProduct({ params }: { params: IdParams }) {
 
 export function DuplicateProductPage({ params }: { params: IdParams }) {
   return (
-    <Page>
+    <Page fallback={<FormSkeleton />}>
       <DuplicateProduct params={params} />
     </Page>
   );

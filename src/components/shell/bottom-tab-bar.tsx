@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Ellipsis, Plus } from "lucide-react";
+import { LinkPending } from "@/components/link-pending";
 import {
   Sheet,
   SheetClose,
@@ -113,7 +114,9 @@ function TabBar({
         aria-current={active ? "page" : undefined}
         className={cn(tabClass, active ? "text-navy" : "text-ink-subtle")}
       >
-        <Icon className="size-[22px]" strokeWidth={1.5} />
+        <LinkPending>
+          <Icon className="size-[22px]" strokeWidth={1.5} />
+        </LinkPending>
         {item.label}
       </Link>
     );
@@ -133,7 +136,9 @@ function TabBar({
             aria-label="New Order"
             className="-mt-5 flex size-14 items-center justify-center rounded-full bg-navy text-white shadow-overlay ring-4 ring-surface"
           >
-            <Plus className="size-6" strokeWidth={2} />
+            <LinkPending>
+              <Plus className="size-6" strokeWidth={2} />
+            </LinkPending>
           </Link>
         </div>
         {tab(PRODUCTS)}

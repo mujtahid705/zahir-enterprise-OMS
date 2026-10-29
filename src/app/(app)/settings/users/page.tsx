@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { Plus } from "lucide-react";
+import { SearchForm, SearchPending } from "@/components/search-form";
+import { ListSkeleton } from "@/components/skeletons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,7 +28,7 @@ export default function UsersPage({
           </Link>
         </Button>
       </div>
-      <Suspense>
+      <Suspense fallback={<ListSkeleton />}>
         <UserList searchParams={searchParams} />
       </Suspense>
     </section>
@@ -47,18 +49,21 @@ async function UserList({
 
   return (
     <>
-      <form role="search" className="max-w-sm">
+      <SearchForm className="max-w-sm">
         <Label htmlFor="q" className="sr-only">
           Search Users
         </Label>
-        <Input
-          id="q"
-          name="q"
-          type="search"
-          defaultValue={query}
-          placeholder="Search name or email"
-        />
-      </form>
+        <div className="relative">
+          <Input
+            id="q"
+            name="q"
+            type="search"
+            defaultValue={query}
+            placeholder="Search name or email"
+          />
+          <SearchPending />
+        </div>
+      </SearchForm>
 
       <div className="overflow-hidden rounded-xl border border-border bg-surface">
         <table className="w-full text-sm">

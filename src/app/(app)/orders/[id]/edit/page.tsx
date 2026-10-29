@@ -6,6 +6,7 @@ import { ChevronLeft } from "lucide-react";
 import { z } from "zod";
 import { OrderSteps, type OrderEdit } from "@/components/orders/order-steps";
 import { TopBar } from "@/components/shell/top-bar";
+import { FormSkeleton } from "@/components/skeletons";
 import { requireRole } from "@/lib/auth";
 import { todayInDhaka } from "@/lib/dates";
 import { editBlock } from "@/lib/orders";
@@ -20,7 +21,7 @@ export default function Page({ params }: PageProps<"/orders/[id]/edit">) {
     <>
       <TopBar title="Edit Order" />
       <main className="flex-1 p-4 md:p-8">
-        <Suspense>
+        <Suspense fallback={<FormSkeleton />}>
           <EditOrder params={params} />
         </Suspense>
       </main>

@@ -3,7 +3,9 @@ import { Suspense } from "react";
 import { Download } from "lucide-react";
 import { StatusPill } from "@/components/orders/status-pill";
 import { Pager } from "@/components/pager";
+import { SearchForm, SearchSubmit } from "@/components/search-form";
 import { TopBar } from "@/components/shell/top-bar";
+import { ListSkeleton } from "@/components/skeletons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,7 +38,7 @@ export function ReportPage({ searchParams }: { searchParams: SearchParams }) {
     <>
       <TopBar title="Reports" />
       <main className="flex-1 p-4 md:p-8">
-        <Suspense>
+        <Suspense fallback={<ListSkeleton />}>
           <Report searchParams={searchParams} />
         </Suspense>
       </main>
@@ -62,8 +64,7 @@ async function Report({ searchParams }: { searchParams: SearchParams }) {
       <ReportTabs filters={filters} />
 
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <form
-          role="search"
+        <SearchForm
           aria-label="Order date range"
           className="flex flex-wrap items-center gap-2"
         >
@@ -87,9 +88,7 @@ async function Report({ searchParams }: { searchParams: SearchParams }) {
             </Label>
             <Input id="to" name="to" type="date" defaultValue={filters.to} />
           </div>
-          <Button type="submit" variant="outline">
-            Apply
-          </Button>
+          <SearchSubmit>Apply</SearchSubmit>
           {ranged && (
             <Link
               href={reportHref({ report: filters.report, page: 1 })}
@@ -98,7 +97,7 @@ async function Report({ searchParams }: { searchParams: SearchParams }) {
               All dates
             </Link>
           )}
-        </form>
+        </SearchForm>
         <Button asChild variant="outline">
           {/* A plain link: the route answers with a file to save. */}
           <a href={reportHref(filters, "/reports/export")} download>

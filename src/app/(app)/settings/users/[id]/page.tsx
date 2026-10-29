@@ -14,6 +14,7 @@ import {
   historyTab,
 } from "@/components/activity/record-history";
 import { DeactivatedBadge } from "@/components/deactivated-badge";
+import { FormSkeleton } from "@/components/skeletons";
 import { ActiveForm, ResetPasswordForm, RoleForm } from "./user-forms";
 
 export const metadata: Metadata = { title: "User" };
@@ -23,7 +24,7 @@ export default function UserPage({
   searchParams,
 }: PageProps<"/settings/users/[id]">) {
   return (
-    <Suspense>
+    <Suspense fallback={<FormSkeleton />}>
       <UserDetail params={params} searchParams={searchParams} />
     </Suspense>
   );

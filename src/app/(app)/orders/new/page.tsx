@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { OrderSteps } from "@/components/orders/order-steps";
 import { TopBar } from "@/components/shell/top-bar";
+import { FormSkeleton } from "@/components/skeletons";
 import { requireRole } from "@/lib/auth";
 import { todayInDhaka } from "@/lib/dates";
 import { PERMISSIONS, can } from "@/lib/permissions";
@@ -15,7 +16,7 @@ export default function Page() {
     <>
       <TopBar title="New Order" />
       <main className="flex-1 p-4 md:p-8">
-        <Suspense>
+        <Suspense fallback={<FormSkeleton />}>
           <NewOrder />
         </Suspense>
       </main>

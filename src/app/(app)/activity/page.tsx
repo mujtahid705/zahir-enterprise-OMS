@@ -5,7 +5,9 @@ import { Download } from "lucide-react";
 import { ActivityEntries } from "@/components/activity/activity-entries";
 import { EmptyState } from "@/components/empty-state";
 import { Pager } from "@/components/pager";
+import { SearchForm, SearchSubmit } from "@/components/search-form";
 import { TopBar } from "@/components/shell/top-bar";
+import { ListSkeleton } from "@/components/skeletons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,7 +31,7 @@ export default function Page({ searchParams }: PageProps<"/activity">) {
     <>
       <TopBar title="Activity" />
       <main className="flex-1 p-4 md:p-8">
-        <Suspense>
+        <Suspense fallback={<ListSkeleton />}>
           <ActivityLog searchParams={searchParams} />
         </Suspense>
       </main>
@@ -53,10 +55,7 @@ async function ActivityLog({
 
   return (
     <section className="flex max-w-6xl flex-col gap-4">
-      <form
-        role="search"
-        className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-[2fr_repeat(3,minmax(8.5rem,1fr))_auto_auto_auto]"
-      >
+      <SearchForm className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-[2fr_repeat(3,minmax(8.5rem,1fr))_auto_auto_auto]">
         <div className="col-span-2 sm:col-span-3 lg:col-span-1">
           <Label htmlFor="q" className="sr-only">
             Search records
@@ -127,10 +126,8 @@ async function ActivityLog({
           </Label>
           <Input id="to" name="to" type="date" defaultValue={filters.to} />
         </div>
-        <Button type="submit" variant="outline">
-          Filter
-        </Button>
-      </form>
+        <SearchSubmit>Filter</SearchSubmit>
+      </SearchForm>
 
       <div className="flex flex-wrap items-center justify-end gap-3">
         {filtered && (

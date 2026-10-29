@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { TopBar } from "@/components/shell/top-bar";
+import { FormSkeleton } from "@/components/skeletons";
 import { getCurrentUser } from "@/lib/auth";
 import { ROLE_LABEL } from "@/lib/permissions";
 import { NameForm, PasswordForm } from "./account-forms";
@@ -12,7 +13,7 @@ export default function AccountPage() {
     <>
       <TopBar title="Account" />
       <main className="flex-1 p-4 md:p-8">
-        <Suspense>
+        <Suspense fallback={<FormSkeleton />}>
           <Account />
         </Suspense>
       </main>
