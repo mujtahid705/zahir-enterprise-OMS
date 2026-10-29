@@ -537,7 +537,7 @@ async function lockForEdit(tx: Tx, id: string, updatedAt: string | null) {
 }
 
 // The optimistic-lock check: nothing is written over someone else's save.
-async function assertUnchanged(
+export async function assertUnchanged(
   tx: Tx,
   order: typeof ordersTable.$inferSelect,
   updatedAt: string | null,

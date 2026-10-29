@@ -15,6 +15,13 @@ import { DeactivatedBadge } from "@/components/deactivated-badge";
 import { DocumentPreview } from "@/components/orders/document-preview";
 import { RefreshPrices } from "@/components/orders/refresh-prices";
 import {
+  CancelOrder,
+  ChangeStatus,
+  MarkCompleted,
+  RestoreOrder,
+  UnlockOrder,
+} from "@/components/orders/status-controls";
+import {
   SendDocument,
   SendToast,
   type SendDocumentProps,
@@ -31,7 +38,12 @@ import { getCurrentUser } from "@/lib/auth";
 import { formatDate, formatDateTime, todayInDhaka } from "@/lib/dates";
 import { fileName, type DocumentRef } from "@/lib/documents";
 import { formatMoney, formatPieces } from "@/lib/money";
-import { editBlock, woProgress, type OrderStatus } from "@/lib/orders";
+import {
+  editBlock,
+  statusTargets,
+  woProgress,
+  type OrderStatus,
+} from "@/lib/orders";
 import { can } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import {
@@ -91,6 +103,13 @@ async function OrderDetail({ params }: { params: IdParams }) {
   );
   // Free edit until the first document goes out (SPEC §5.5).
   const editable = !editBlock(order, order.workOrders);
+  const bound = {
+    orderId: order.id,
+    updatedAt: order.updatedAt?.toISOString() ?? null,
+  };
+  const cancelled = order.status === "cancelled";
+  const targets = statusTargets(actor.role, order.status);
+  const completesOrCancels = can(actor.role, "completeOrCancel");
   const details: [string, string | null][] = [
     ["Customer reference", order.customerRef],
     ["Delivery address", order.deliveryAddress],
@@ -137,12 +156,26 @@ async function OrderDetail({ params }: { params: IdParams }) {
           {order.deliveryDate &&
             ` · Delivery by ${formatDate(order.deliveryDate)}`}
         </p>
-        {order.isLocked && (
-          <p className="mt-3 flex items-center gap-2 rounded-lg bg-canvas px-3 py-2.5 text-sm text-ink-muted">
+        {order.isLocked && !cancelled && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-canvas px-3 py-2.5 text-sm text-ink-muted">
             <Lock className="size-4 shrink-0" strokeWidth={1.75} />
-            Invoice sent, so this order is locked. Documents can still be
-            downloaded.
-          </p>
+            <p className="flex-1">
+              Invoice sent, so this order is locked. Documents can still be
+              downloaded.
+            </p>
+            {can(actor.role, "unlockOrder") && <UnlockOrder {...bound} />}
+          </div>
+        )}
+        {cancelled && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-canvas px-3 py-2.5 text-sm text-ink-muted">
+            <p className="flex-1">
+              Cancelled
+              {order.cancelledAt && ` ${formatDateTime(order.cancelledAt)}`}
+              {order.cancelReason && `: ${order.cancelReason}`}. This order is
+              read only.
+            </p>
+            {completesOrCancels && <RestoreOrder {...bound} />}
+          </div>
         )}
         {editable && (
           <div className="mt-4 flex flex-wrap items-start gap-2">
@@ -152,12 +185,18 @@ async function OrderDetail({ params }: { params: IdParams }) {
                 Edit order
               </Link>
             </Button>
-            {can(actor.role, "overridePrices") && (
-              <RefreshPrices
-                orderId={order.id}
-                updatedAt={order.updatedAt?.toISOString() ?? null}
-              />
-            )}
+            {can(actor.role, "overridePrices") && <RefreshPrices {...bound} />}
+          </div>
+        )}
+        {completesOrCancels && !cancelled && (
+          <div className="mt-4 flex flex-wrap items-start gap-2">
+            {order.status !== "completed" && <MarkCompleted {...bound} />}
+            <CancelOrder {...bound} />
+          </div>
+        )}
+        {targets.length > 0 && (
+          <div className="mt-4">
+            <ChangeStatus {...bound} targets={targets} />
           </div>
         )}
       </div>
@@ -266,6 +305,8 @@ async function OrderDetail({ params }: { params: IdParams }) {
 function DocumentsPanel({ order }: { order: OrderView }) {
   const url = `/api/orders/${order.id}/documents`;
   const today = todayInDhaka();
+  // A cancelled Order's documents can't be sent (SPEC §5.5): Preview only.
+  const readOnly = order.status === "cancelled";
   const shared = {
     locked: order.isLocked,
     pendingWorkOrders: order.workOrders.filter((wo) => wo.status === "pending")
@@ -313,6 +354,7 @@ function DocumentsPanel({ order }: { order: OrderView }) {
           ) : (
             <DocumentRow
               key={wo.id}
+              readOnly={readOnly}
               subtitle={wo.supplierName}
               send={{
                 ...shared,
@@ -333,6 +375,7 @@ function DocumentsPanel({ order }: { order: OrderView }) {
       </DocumentGroup>
       <DocumentGroup title="To customer" label="Customer documents">
         <DocumentRow
+          readOnly={readOnly}
           subtitle="Challan"
           send={customerDoc(
             { type: "challan" },
@@ -343,6 +386,7 @@ function DocumentsPanel({ order }: { order: OrderView }) {
           )}
         />
         <DocumentRow
+          readOnly={readOnly}
           subtitle="Invoice"
           send={customerDoc(
             { type: "invoice" },
@@ -381,10 +425,12 @@ function DocumentGroup({
 function DocumentRow({
   subtitle,
   send,
+  readOnly,
 }: {
   // The Supplier for a Work Order, else the document's name.
   subtitle: string;
   send: SendDocumentProps;
+  readOnly: boolean;
 }) {
   const state = send.needsResend ? "resend" : send.sentAt ? "sent" : "pending";
   return (
@@ -406,7 +452,7 @@ function DocumentRow({
         </p>
       </div>
       <DocumentPreview url={send.url} fileName={send.fileName} />
-      <SendDocument {...send} />
+      {!readOnly && <SendDocument {...send} />}
     </li>
   );
 }
@@ -524,6 +570,8 @@ function historyLine({
     typeof details[key] === "string" ? (details[key] as string) : "";
   const date = (key: string) => (text(key) ? formatDate(text(key)) : "");
   const via = text("source") === "manual" ? "" : " (automatic)";
+  const status = (key: string) =>
+    ORDER_STATUS_LABEL[text(key) as OrderStatus] ?? text(key);
   switch (action) {
     case "document_download":
       return `Downloaded ${entityLabel}, dated ${date("date")}`;
@@ -534,15 +582,17 @@ function historyLine({
     case "status_change":
       if (entityType === "work_orders")
         return `${entityLabel} marked ${WO_STATUS_LABEL[text("to") as keyof typeof WO_STATUS_LABEL] ?? text("to")}`;
-      return `Status ${ORDER_STATUS_LABEL[text("from") as OrderStatus] ?? text("from")} → ${ORDER_STATUS_LABEL[text("to") as OrderStatus] ?? text("to")}${via}`;
+      return `Status ${status("from")} → ${status("to")}${via}${text("note") && `: ${text("note")}`}`;
     case "lock":
-      return "Order locked: Invoice sent";
+      return text("source") === "manual"
+        ? `Order locked: marked ${status("to")}`
+        : "Order locked: Invoice sent";
     case "unlock":
       return `Order unlocked${text("reason") && `: ${text("reason")}`}`;
     case "cancel":
       return `Order cancelled${text("reason") && `: ${text("reason")}`}`;
     case "restore":
-      return "Order restored";
+      return `Order restored to ${status("to")}`;
   }
 }
 
